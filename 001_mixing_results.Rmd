@@ -1,0 +1,311 @@
+---
+title: "001 mixture results"
+output: html_document
+---
+
+Create run summaries for 001bM and 001gM mixture SVclone results, including clusters and variant CCFs for each run. The plots on the right show the AIC and BIC metrics for goodness of fit. 
+
+```{r setup, include=FALSE, cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('mcclust')
+library('RColorBrewer')
+library('gridExtra')
+source('helper_functions.R')
+
+wd <- '001_mix_results/'
+wd_truth <- '001_truth/'
+pyclone_outdir <- '001_pyclone_out/'
+
+mixes <- c(10, 20, 30, 40, 50, 60, 70, 80, 90)
+mixes <- data.frame(bM=mixes, gM=100 - mixes)
+
+for (i in 1:nrow(mixes)) {
+    p1 <- mixes[i,1]
+    p2 <- mixes[i,2]
+    p_name <- paste('m', p1, p2, sep='')
+    c_name <- paste('i', p1, p2, sep='')
+    p <- plot_mix(wd, wd_truth, p1, p2)
+    pi <- plot_ics(wd, p1, p2, allowed_ics = 'svc_IC', best_run_metric = 'svc_IC')
+    assign(p_name, p, envir = .GlobalEnv)
+    assign(c_name, pi, envir = .GlobalEnv)
+}
+```
+
+## Run summary plots
+
+```{r plot_summaries,  fig.width=20, fig.height=44, warning=FALSE, cache=FALSE}
+grid.arrange(m1090, i1090, 
+             m9010, i9010,
+             m2080, i2080, 
+             m8020, i8020, 
+             m3070, i3070,
+             m7030, i7030,
+             m4060, i4060, 
+             m6040, i6040,
+             m5050, i5050, 
+             ncol = 2)
+```
+
+## Pyclone comparisons
+
+Create comparison mixtures of best SVclone runs vs. PyClone results for each mixture. 
+
+```{r plot_mixes,  fig.width=20, fig.height=20, warning=FALSE, cache=FALSE}
+# load in best runs of SV data
+out <- get_data_svc2(mixes, wd)
+sc_all <- out[[1]]
+ccf_all <- out[[2]]
+ccf_all_unfilt <- attach_001_ground_truth_svs(wd_truth, ccf_all)
+ccf_all <- ccf_all_unfilt[ccf_all_unfilt$sample!='unmatched',]
+
+# load in pyclone data
+pyc_wd <- '001_pyclone_out/'
+pur_wd <- 'cellularity_ploidy/'
+pyc_vcfs <- '001_snv_counts/'
+
+for (i in 1:nrow(mixes)) {
+    p1 <- mixes[i,1]
+    p2 <- mixes[i,2]
+    py_ccfs <- NULL
+    
+    py_ccfs <- load_pyclone_points(pyc_wd, p1, p2)
+    py_ccfs <- attach_001_ground_truth_snvs(wd_truth, py_ccfs)
+
+    ccf_all <- rbind(ccf_all, py_ccfs)
+    sc_all <- rbind(sc_all, load_pyclone_sc(pyc_wd, pur_wd, p1, p2))
+}
+
+truth <- get_truth(sc_all, ccf_all)
+sc_all <- rbind(sc_all, truth[[1]])
+ccf_all <- rbind(ccf_all, truth[[2]])
+
+for (i in 1:nrow(mixes)) {
+    p1 <- mixes[i,1]
+    p2 <- mixes[i,2]
+    p_name <- paste('p', p1, p2, sep='')
+    p <- plot_pyc_mix(sc_all, ccf_all, p1, p2, lim=2)
+    assign(p_name, p, envir = .GlobalEnv)
+}
+```
+
+## Cluster metrics
+
+Calculate mPEAR and cluster metrics
+
+```{r clus_metrics, fig.width=5, fig.height=4, warning=FALSE, cache=FALSE}
+mx <- list.files(wd)
+mx <- mx[grep('^001',mx)]
+mx <- mx[sapply(mx,function(x){length(strsplit(x,'_')[[1]])})<5]
+
+truth_sv <- ccf_all[grep('sv', ccf_all$mix), c('sv', 'sample')]
+truth_sv <- unique(truth_sv)
+
+mpears <- NULL
+for (mix in mx) {
+    z_trace_file <- paste(wd, mix, '/best_run_svs/z_trace.txt.gz', sep='')
+    z_trace <- read.table(z_trace_file, header=F)
+    psm <- comp.psm(as.matrix(z_trace)+1)
+    mpear <- maxpear(psm)
+    
+    tmp <- strsplit(mix,'_')[[1]]
+    p1 <- as.numeric(strsplit(tmp[2],'p')[[1]][2])*100
+    p2 <- 100 - p1
+    
+    svs_file <- paste(wd, mix, '/', mix, '_filtered_svs.tsv',sep='')
+    svs <- read.delim(svs_file, stringsAsFactors=F)
+    sv_class <- data.frame(sv=paste(svs$chr1, svs$pos1, svs$dir1, 
+                                    svs$chr2, svs$pos2, svs$dir2, sep=':'), class=mpear$cl)
+    sv_class <- unique(merge(sv_class, truth_sv, by='sv', all.x=T))
+    sv_class <- sv_class[!is.na(sv_class$sample),]
+    
+    tru_labs <- as.numeric(as.factor(sv_class$sample))
+    rand_idx <- arandi(sv_class$class, tru_labs, adjust=T)
+    mpears <- rbind(mpears, data.frame(mix=paste(p1,p2,sep='-'), rand_idx=rand_idx))
+}
+
+colnames(mpears) <- c('Mix','Rand Index')
+mpears$Clusters <- as.numeric(table(as.character(sc_all[grep('svs$',sc_all$mix),'mix'])))
+
+# calculate mean squared error
+sc_tmp <- sc_all[grep('truth',sc_all$mix,invert=T),]
+sc_tmp$mix <- as.character(sc_tmp$mix)
+
+mean_err <- c()
+types <- c()
+for (i in 1:nrow(sc_tmp)) {
+    ps <- strsplit(strsplit(sc_tmp$mix[i], '_')[[1]][1],'-')[[1]]
+    p1 <- as.numeric(ps[1])/100
+    p2 <- as.numeric(ps[2])/100
+    n <- sc_tmp$CCF[i]
+    me <- min(c((1-n)^2, (p1-n)^2, (p2-n)^2))
+    types <- c(types,strsplit(sc_tmp$mix[i], '_')[[1]][2])
+    mean_err <- c(mean_err, me)
+}
+sc_tmp <- cbind(sc_tmp,mean_err)
+sc_tmp <- cbind(sc_tmp,types)
+sc_tmp$types <- as.factor(sc_tmp$types)
+
+x <- data.table(sc_tmp[grep('svs',sc_tmp$mix),])
+x <- x[,mean(mean_err),by=mix]
+mpears$`Mean Squared Error` <- round(x$V1,4)
+mpears$`Rand Index` <- round(mpears$`Rand Index`,4)
+mpears <- mpears[,c('Mix','Clusters','Mean Squared Error','Rand Index')]
+mpears[mpears$Clusters!=3,'Mean Squared Error'] <- NA
+
+x <- data.frame('Average', round(mean(mpears$Clusters),4), round(mean(mpears$`Mean Squared Error`,na.rm=T),4), round(mean(mpears$`Rand Index`),4))
+colnames(x) <- colnames(mpears)
+mpears <- rbind(mpears, x)
+grid.arrange(tableGrob(mpears, rows=c()))
+```
+
+## Best run histograms
+
+Plot best run histogram of CCFs per mixture and SVclone clustering performance metrics.
+
+```{r cluster_results, fig.width=16, fig.height=10, warning=FALSE, cache=FALSE}
+for (i in 1:nrow(mixes)) {
+    p1 <- mixes[i,1]; p2 <- mixes[i,2]
+    base_name <- paste('001bM_p', p1/100, '_001gM_p', p2/100, sep = '')
+    p <- plot_ccf_hist(wd, base_name, p1, p2, pick_run='best_run_svs_post_assign')
+    h_name <- paste('h', p1, p2, sep='')
+    assign(h_name, p, envir = .GlobalEnv)
+}
+
+grid.arrange(h4060, h3070, h2080, 
+             h6040, h7030, h8020, 
+             h1090, h9010, h5050, ncol = 3)
+```
+
+## PyClone results
+
+Comparison with SVclone
+
+```{r pyclone_comp, fig.width=16, fig.height=12, warning=FALSE, cache=FALSE}
+grid.arrange(p4060, p3070, p2080, 
+             p6040, p7030, p8020, 
+             p1090, p9010, p5050, ncol = 3)
+```
+
+## Theoretically optimal VAF solutions
+
+SVs
+
+```{r best_ccf_distributions, fig.width=16, fig.height=10, warning=FALSE, cache=FALSE}
+for (i in 1:nrow(mixes)) {
+    p1 <- mixes[i,1]; p2 <- mixes[i,2]
+    mix <- paste(p1, p2, sep='')
+    pur <- get_purity_mixes(wd, p1, p2)
+    
+    x_sv0 <- get_matched_cnv_locs(wd, p1, p2, truth_sv)
+    x_sv0 <- compare_cnv_truth(x_sv0, wd_truth)
+    x_sv0 <- estimate_best_ccfs(x_sv0, pur, p1, p2)
+
+    x_sv1 <- get_matched_cnv_locs(wd, p1, p2, truth_sv, side=1)
+    x_sv1 <- compare_cnv_truth(x_sv1, wd_truth)
+    x_sv1 <- estimate_best_ccfs(x_sv1, pur, p1, p2)
+
+    y <- data.frame(x0=x_sv0$best_ccf, x1=x_sv1$best_ccf, target=x_sv0$target, truth=x_sv0$truth)
+    y$x0_dev <- abs(y$x0-y$target)
+    y$x1_dev <- abs(y$x1-y$target)
+    y$best_ccf <- as.numeric(apply(y, 1,function(x){if(x['x0_dev']<x['x1_dev'])
+                                               {return(x['x0'])}else{return(x['x1'])}}))
+    
+    p <- suppressMessages(plot_best_ccfs(y, p1, p2) + ylim(0,25))
+    pname <- paste('v', mix, sep='')
+    assign(pname, p, envir = .GlobalEnv)
+    assign(paste('sv', mix, sep=''), x_sv0, envir = .GlobalEnv)
+}
+
+all_sv <- NULL
+x <- list(sv4060, sv3070, sv2080, sv6040, sv7030, sv8020, sv1090, sv9010, sv5050)
+for (i in 1:length(x)) {
+    all_sv <- rbind(all_sv, x[[i]])
+}
+tb <- table(all_sv$cnv_true)
+tb;sapply(tb, function(x){x/sum(tb)})
+
+grid.arrange(v4060, v3070, v2080, 
+             v6040, v7030, v8020, 
+             v1090, v9010, v5050, ncol = 3)
+```
+
+SVclone SV clustering vs. truth
+
+```{r optimal_vs_svclone_hard, fig.width=10, fig.height=30, warning=FALSE, cache=FALSE}
+grid.arrange(h1090, v1090, 
+             h2080, v2080, 
+             h3070, v3070, 
+             h4060, v4060, 
+             h5050, v5050, 
+             h6040, v6040,
+             h7030, v7030,
+             h8020, v8020,
+             h9010, v9010, ncol=2)
+```
+
+Theoretically optimal SNV solutions (use SVclone's model of multiplicity determination).
+
+```{r plot_optimal_snvs, fig.width=15, fig.height=10, warning=FALSE, cache=FALSE}
+for (i in 1:nrow(mixes)) {
+    p1 <- mixes[i,1]; p2 <- mixes[i,2]
+    base <- paste('001bM_p', p1/100, '_001gM_p', p2/100, sep = '')
+    base_dir <- paste(pyclone_outdir, base, '/', sep='')
+    pur <- get_purity_mixes(wd, p1, p2)
+    wd <- '001_mix_results/'
+
+    vcf_file <- paste(pyc_vcfs, base, '_merged_sorted_reheader.basecounts.vcf', sep='')
+    dat <- read.delim(vcf_file, sep='\t', skip=6)
+
+    counts <- t(data.frame(sapply(as.character(dat[,ncol(dat)]),
+                                  function(x){strsplit(strsplit(x,':')[[1]][2],',')})))
+    dat$ref <- as.numeric(counts[,1])
+    dat$alt <- as.numeric(counts[,2])
+    dat$vaf <- dat$alt / (dat$ref + dat$alt)
+    dat$adjusted_vaf <- NA
+
+    mix <- paste(p1, '-', p2, '_pyc', sep='')
+    y <- data.frame(sv=paste(dat$X.CHROM, dat$POS, sep='_'), mix=mix, 
+                    adjusted_support = dat$alt,
+                    adjusted_depth = dat$ref+dat$alt,
+                    CCF=NA, VAF=dat$vaf,
+                    cluster=NA, sample=NA)
+    y <- attach_001_ground_truth_snvs(wd_truth, y)
+
+    x_snv <- get_snv_wcnv(wd, y, base, mix)
+    x_snv <- compare_cnv_truth(x_snv, wd_truth)
+    keep <- as.numeric(sapply(x_snv$gtype, function(x){length(strsplit(x,'\\|')[[1]])}))==1
+    x_snv <- x_snv[keep, ]
+    x_snv <- estimate_best_ccfs(x_snv, pur, p1, p2)
+    p <- plot_best_ccfs(x_snv, p1, p2, 350)
+    pname <- paste('vv', p1, p2, sep='')
+    assign(pname, p, envir = .GlobalEnv)
+}
+
+grid.arrange(vv4060, vv3070, vv2080, 
+             vv6040, vv7030, vv8020, 
+             vv1090, vv9010, vv5050, ncol = 3)
+```
+
+Plot all comparison histograms.
+
+```{r all_comp_mixures, fig.width=15, fig.height=22, warning=FALSE, cache=FALSE}
+for (i in 1:nrow(mixes)) {
+    p1 <- mixes[i,1]; p2 <- mixes[i,2]
+    mix <- paste(p1, '-', p2, '_pyc', sep='')
+    base_name <- paste('001bM_p', p1/100, '_001gM_p', p2/100, sep = '')
+    p <- plot_pyc_clusts_only(sc_all, p1, p2)
+    pname <- paste('pc', p1, p2, sep='')
+    assign(pname, p, envir = .GlobalEnv)
+}
+
+grid.arrange(h1090, v1090, pc1090, vv1090,
+             h2080, v2080, pc2080, vv2080,
+             h3070, v3070, pc3070, vv3070,
+             h4060, v4060, pc4060, vv4060,
+             h5050, v5050, pc5050, vv5050,
+             h6040, v6040, pc6040, vv6040,
+             h7030, v7030, pc7030, vv7030,
+             h8020, v8020, pc8020, vv8020,
+             h9010, v9010, pc9010, vv9010,
+             ncol=4)
+```
