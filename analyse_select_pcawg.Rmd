@@ -48,43 +48,42 @@ subclonal_cutoff <- 0.9
 Prepare summary table for subclonality analysis between samples.
 
 ```{r, cache=TRUE}
-# sv_summary <- NULL
-# for (aid in pcawg_list$tumor_wgs_aliquot_id) {
-#     sv_ccert <- paste(run_dir, '/SVs/', aid, '_cluster_certainty.txt', sep='')
-#     snv_ccert <- paste(run_dir, '/SNVs/', aid, '_cluster_certainty.txt', sep='')
-#     if (file.exists(sv_ccert) | file.exists(snv_ccert)) {
-#         pur <- pcawg_pp[pcawg_pp$samplename==aid,'purity']
-#         if (file.exists(sv_ccert)) {
-#             svs <- read.delim(sv_ccert, sep='\t')
-#             sv_ccfs <- svs$average_proportion/pur
-#             sv_sc_frac <- sum(sv_ccfs < subclonal_cutoff) / length(sv_ccfs)
-#         } else {
-#             svs <- data.frame()
-#             sv_ccfs <- NA
-#             sv_sc_frac <- NA
-#         }
-# 
-#         if (file.exists(snv_ccert)) {
-#             snvs <- read.delim(snv_ccert, sep='\t')
-#             snv_ccfs <- snvs$average_proportion/pur
-#             snv_sc_frac <- sum(snv_ccfs < subclonal_cutoff) / length(snv_ccfs)
-#         } else {
-#             snvs <- data.frame()
-#             snv_ccfs <- NA
-#             snv_sc_frac <- NA
-#         }
-# 
-#         type <- strsplit(pcawg_list[pcawg_list$tumor_wgs_aliquot_id==aid, 'dcc_project_code'], '-')[[1]][1]
-#         sv_table <- data.frame(sample=aid, nsv=nrow(svs), nsnv=nrow(snvs),
-#                                sv_sc_frac=sv_sc_frac, type=type, snv_sc_frac=snv_sc_frac)
-#         sv_summary <- rbind(sv_summary, sv_table)
-#     }
-# }
-# samples <- unique(sv_summary$sample)
-# write.table(sv_summary, 'tables/pcawg_sv_summary.tsv', sep='\t', quote=F, row.names=F)
-# ^ uncomment above to re-generate
+sv_summary <- NULL
+for (aid in pcawg_list$tumor_wgs_aliquot_id) {
+    sv_ccert <- paste(run_dir, '/SVs/', aid, '_cluster_certainty.txt', sep='')
+    snv_ccert <- paste(run_dir, '/SNVs/', aid, '_cluster_certainty.txt', sep='')
+    if (file.exists(sv_ccert) | file.exists(snv_ccert)) {
+        pur <- pcawg_pp[pcawg_pp$samplename==aid,'purity']
+        if (file.exists(sv_ccert)) {
+            svs <- read.delim(sv_ccert, sep='\t')
+            sv_ccfs <- svs$average_proportion/pur
+            sv_sc_frac <- sum(sv_ccfs < subclonal_cutoff) / length(sv_ccfs)
+        } else {
+            svs <- data.frame()
+            sv_ccfs <- NA
+            sv_sc_frac <- NA
+        }
 
-sv_summary <- read.delim('tables/pcawg_sv_summary.tsv', sep='\t', stringsAsFactors = F)
+        if (file.exists(snv_ccert)) {
+            snvs <- read.delim(snv_ccert, sep='\t')
+            snv_ccfs <- snvs$average_proportion/pur
+            snv_sc_frac <- sum(snv_ccfs < subclonal_cutoff) / length(snv_ccfs)
+        } else {
+            snvs <- data.frame()
+            snv_ccfs <- NA
+            snv_sc_frac <- NA
+        }
+
+        type <- strsplit(pcawg_list[pcawg_list$tumor_wgs_aliquot_id==aid, 'dcc_project_code'], '-')[[1]][1]
+        sv_table <- data.frame(sample=aid, nsv=nrow(svs), nsnv=nrow(snvs),
+                               sv_sc_frac=sv_sc_frac, type=type, snv_sc_frac=snv_sc_frac)
+        sv_summary <- rbind(sv_summary, sv_table)
+    }
+}
+samples <- unique(sv_summary$sample)
+write.table(sv_summary, 'tables/pcawg_sv_summary.tsv', sep='\t', quote=F, row.names=F)
+
+# sv_summary <- read.delim('tables/pcawg_sv_summary.tsv', sep='\t', stringsAsFactors = F)
 ```
 
 ## Density plots
