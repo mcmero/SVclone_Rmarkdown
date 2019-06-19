@@ -32,19 +32,19 @@ load_simu_data <- function(sim_dir, support_adjust) {
         sample <- paste(info,collapse='_')
         purity <- as.numeric(strsplit(info[1],'p')[[1]][2])/100
         var_type <- info[2]
-        
+
         svs <- load_sv_data(sim_dir, sim_run[i])
         svs <- svs[svs$classification%in%var_type,]
-        svs$norm_min <- apply(svs[,c('norm1','norm2')],1,min)
-        svs$raw_vaf <- svs$support / (svs$support + svs$norm_min)
+        svs$raw_vaf <- svs$mean_vaf
         svs$adjusted_support <- svs$support * (1 + (support_adjust * purity))
-        if (length(grep('DUP',sample))>0) {
-            svs$adjusted_norm <- svs$norm_min * (1 - purity/2)
+        svs$adjusted_norm <- svs$norm_mean
+        if (length(grep('DUP', sample))>0) {
+            svs$adjusted_norm <- svs$adjusted_norm * (1 - purity/2)
         }
         svs$adjusted_depth <- svs$adjusted_support + svs$adjusted_norm
         svs$adjusted_vaf <- svs$adjusted_support / svs$adjusted_depth
         assign(sample, svs, envir = .GlobalEnv)
-        
+
         target_vaf <- purity/2
         cdf <- rbind(cdf,data.frame(sample=sample,
                                     purity=purity,
@@ -60,9 +60,11 @@ load_simu_data <- function(sim_dir, support_adjust) {
                                     norm_mean=svs$norm_mean,
                                     anomalous=svs$anomalous,
                                     vaf=svs$adjusted_vaf))
-            
-        accu_p1 <- sum(svs$adjusted_vaf>=(target_vaf-.1) & svs$adjusted_vaf<=(target_vaf+.1))/nrow(svs)
-        accu_p05 <- sum(svs$adjusted_vaf>=(target_vaf-.05) & svs$adjusted_vaf<=(target_vaf+.05))/nrow(svs)
+
+        accu_p1 <- sum(svs$adjusted_vaf>=(target_vaf-.1) &
+                           svs$adjusted_vaf<=(target_vaf+.1))/nrow(svs)
+        accu_p05 <- sum(svs$adjusted_vaf>=(target_vaf-.05) &
+                            svs$adjusted_vaf<=(target_vaf+.05))/nrow(svs)
         simu_table <- rbind(simu_table,
                             data.frame(type=info[2],purity=purity,
                                        target_vaf=target_vaf,
@@ -82,34 +84,42 @@ load_simu_data <- function(sim_dir, support_adjust) {
 }
 
 plot_vaf_comp <- function(sv, type) {
-    sv1 <- data.frame(VAF=sv[,'raw_vaf'],VAF_type='Raw')
-    sv2 <- data.frame(VAF=sv[,'adjusted_vaf'],VAF_type='Adjusted')
-    
-    sv_comp <- ggplot(rbind(sv1,sv2),aes(fill=VAF_type)) + 
-           geom_histogram(data=sv1, aes(x=VAF, y=..density..), binwidth=0.025, colour="black", alpha=0.6) +
-           geom_histogram(data=sv2, aes(x=VAF, y=..density..), binwidth=0.025, colour="black", alpha=0.6) +
+    if (type %in% c('Duplications')) {
+        sv1 <- data.frame(VAF=sv[,'raw_vaf'],VAF_type='Raw')
+        sv2 <- data.frame(VAF=sv[,'adjusted_vaf'],VAF_type='Adjusted')
+        sv <- rbind(sv1, sv2)
+    } else {
+        sv <- data.frame(VAF=sv[,'adjusted_vaf'],VAF_type='Raw')
+    }
+    sv_comp <- ggplot(sv, aes(fill=VAF_type)) +
+           geom_histogram(data=sv, aes(x=VAF, y=..density..),
+                          binwidth=0.025, colour="black", alpha=0.6) +
            geom_density(aes(x=VAF), alpha=0.1) + theme_minimal() +
-           theme(panel.grid.major = element_blank(), 
+           theme(panel.grid.major = element_blank(),
                  panel.grid.minor = element_blank(), panel.background = element_blank()) +
-           geom_density(aes(x=VAF), alpha=0.1) +
            scale_x_continuous(limits=c(0,0.8),breaks=seq(0,1,4*0.05)) + labs(fill='') +
-           theme(text = element_text(size=22), legend.position="bottom") + 
+           theme(text = element_text(size=22), legend.position="bottom") +
            scale_fill_manual(values = c("#33a02c","#1f78b4")) + ylab('Density') +
-           geom_vline(xintercept=0.5, size=2) +
            ggtitle(type)
-    
+
+    if (type %in% c('Duplications')) {
+        sv_comp <- sv_comp + geom_histogram(data=sv2, aes(x=VAF, y=..density..),
+                                          binwidth=0.025, colour="black", alpha=0.6) +
+                                          geom_density(aes(x=VAF), alpha=0.1)
+    }
+    sv_comp <- sv_comp + geom_vline(xintercept=0.5, size=2)
     return(sv_comp)
 }
 
 plot_sv_adjustment <- function(x, type, title) {
-    p1 <- ggplot(x[x$type==type,], aes(x=VAF, y=Purity, color=as.factor(VAF_type))) +
-        geom_point(size=2.5) + geom_line() + ggtitle(title) + 
-        geom_abline(intercept=0, slope = 2, size=2, color='darkgrey', linetype='dotted') + 
+    p1 <- ggplot(x[x$type%in%type,], aes(x=VAF, y=Purity, color=as.factor(VAF_type))) +
+        geom_abline(intercept=0, slope = 2, size=2, color='darkgrey', linetype='dotted') +
+        geom_point(size=2.5) + geom_line() + ggtitle(title) +
         scale_y_continuous(breaks = seq(0,1,0.2), limits = c(0,1)) +
         scale_x_continuous(breaks = seq(0,1,0.2), limits=c(0,0.8)) +
         theme_minimal() + theme( panel.background = element_blank(),
-            legend.title=element_blank(), text = element_text(size=40), legend.position="bottom", 
-            axis.text=element_text(size=22),
+            legend.title=element_blank(), text = element_text(size=18), legend.position="bottom",
+            axis.text=element_text(size=15),
             plot.title = element_text(hjust = 0.5)) +
         scale_colour_manual(values = c("#1f78b4", "#33a02c"))
     return(p1)
@@ -120,7 +130,7 @@ simu_names <- c("p20_DEL","p20_INV","p20_TRX","p20_DUP","p40_DEL","p40_INV","p40
                  "p100_DEL","p100_INV","p100_TRX","p100_DUP")
 
 sim_dir <- 'simulation_results/'
-support_adjust <- 0.12
+support_adjust <- 0
 results <- load_simu_data(sim_dir, support_adjust)
 simu_table <- results[[1]]; cdf <- results[[2]]
 ```
@@ -133,7 +143,7 @@ cdf$sample <- factor(cdf$sample,levels=simu_names)
 mean_vaf <- mean(abs(simu_table[simu_table$target_vaf!='DUP',]$mean_vaf-simu_table[simu_table$target_vaf!='DUP',]$target_vaf))
 adjusted_vaf <- mean(abs(simu_table[simu_table$target_vaf!='DUP',]$mean_vaf_adj-simu_table[simu_table$target_vaf!='DUP',]$target_vaf))
 
-print(paste('Mean VAF deviation:', round(mean_vaf, 4), 
+print(paste('Mean VAF deviation:', round(mean_vaf, 4),
             '; Adjusted VAF deviation', round(adjusted_vaf,4)))
 ```
 
@@ -161,7 +171,7 @@ grid.arrange(dup_comp, del_comp, inv_comp, trx_comp, ncol = 2)
 
 ## VAF adjustment at all purity levels
 
-```{r,  simu_adj_pur, fig.width=12, fig.height=12}
+```{r,  simu_adj_pur, fig.width=12, fig.height=6}
 simu_vars <- c(paste(rep('p',5), seq(20,100,20), rep('_', 5), rep('DEL',5),sep=''),
                paste(rep('p',5), seq(20,100,20), rep('_', 5), rep('DUP',5),sep=''),
                paste(rep('p',5), seq(20,100,20), rep('_', 5), rep('TRX',5),sep=''),
@@ -186,82 +196,9 @@ x <- melt(simu_stats,id=c('type','Purity','target_vaf'))
 colnames(x)[4:5] <- c('VAF_type', 'VAF')
 
 dup <- plot_sv_adjustment(x, 'DUP', 'Duplications')
-del <- plot_sv_adjustment(x, 'DEL', 'Deletions')
-inv <- plot_sv_adjustment(x, 'INV', 'Inversions')
-trx <- plot_sv_adjustment(x, 'TRX', 'Translocations')
+oth <- plot_sv_adjustment(x[x$VAF_type%in%'raw',], c('INV', 'DEL', 'TRX'), 'Other SVs')
 
-grid.arrange(dup, del, inv, trx, ncol=2)
-```
-
-# Simulation results using BWA-aligned data
-
-```{r}
-sim_dir <- 'simulation_results_bwa/'
-support_adjust <- 0.20
-results <- load_simu_data(sim_dir, support_adjust)
-simu_table <- results[[1]]; cdf <- results[[2]]
-
-cdf$sample <- factor(cdf$sample,levels=simu_names)
-
-mean_vaf <- mean(abs(simu_table[simu_table$target_vaf!='DUP',]$mean_vaf-simu_table[simu_table$target_vaf!='DUP',]$target_vaf))
-adjusted_vaf <- mean(abs(simu_table[simu_table$target_vaf!='DUP',]$mean_vaf_adj-simu_table[simu_table$target_vaf!='DUP',]$target_vaf))
-
-print(paste('Mean VAF deviation:', round(mean_vaf, 4), 
-            '; Adjusted VAF deviation', round(adjusted_vaf,4)))
-```
-
-## VAF accuracy
-
-```{r, simu_accuracy_bwa, fig.width=12, fig.height=4}
-p1 <- ggplot(simu_table, aes(x=purity, y=accuracy_p05, color=type)) + theme_minimal() +
-     scale_y_continuous(lim=c(0,1)) + geom_point(size=5) + geom_line() + ggtitle('Within 5% accuracy')
-p2 <- ggplot(simu_table, aes(x=purity, y=accuracy_p1, color=type)) + theme_minimal() +
-     scale_y_continuous(lim=c(0,1)) + geom_point(size=5) + geom_line() + ggtitle('SVs within 10% accuracy')
-
-grid.arrange(p1,p2,ncol=2)
-```
-
-## VAF adjustment (100% purity)
-
-```{r, simu_adjustment_bwa, fig.width=12, fig.height=12}
-dup_comp <- plot_vaf_comp(p100_DUP, 'Duplications')
-del_comp <- plot_vaf_comp(p100_DEL, 'Deletions')
-inv_comp <- plot_vaf_comp(p100_INV, 'Inversions')
-trx_comp <- plot_vaf_comp(p100_TRX, 'Translocations')
-
-grid.arrange(dup_comp, del_comp, inv_comp, trx_comp, ncol = 2)
-```
-
-## VAF adjustment at all purity levels
-
-```{r,  simu_adj_pur_bwa, fig.width=12, fig.height=12}
-simu_vars <- c(paste(rep('p',5), seq(20,100,20), rep('_', 5), rep('DEL',5),sep=''),
-               paste(rep('p',5), seq(20,100,20), rep('_', 5), rep('DUP',5),sep=''),
-               paste(rep('p',5), seq(20,100,20), rep('_', 5), rep('TRX',5),sep=''),
-               paste(rep('p',5), seq(20,100,20), rep('_', 5), rep('INV',5),sep=''))
-
-simu_stats <- NULL
-for(var in simu_vars) {
-    info <- strsplit(var, '_')[[1]]
-    svs <- get(var)
-    purity <- as.numeric(strsplit(info[1],'p')[[1]][2])/100
-    target_vaf <- purity/2
-    simu_stats <- rbind(simu_stats,
-                        data.frame(type=info[2],Purity=purity,
-                                   target_vaf=target_vaf,
-                                   raw=mean(svs$raw_vaf),
-                                   adjusted=round(mean(svs$adjusted_vaf),4)
-                                   )
-                        )
-}
-
-x <- melt(simu_stats,id=c('type','Purity','target_vaf'))
-colnames(x)[4:5] <- c('VAF_type', 'VAF')
-
-dup <- plot_sv_adjustment(x, 'DUP', 'Duplications')
-del <- plot_sv_adjustment(x, 'DEL', 'Deletions')
-inv <- plot_sv_adjustment(x, 'INV', 'Inversions')
-trx <- plot_sv_adjustment(x, 'TRX', 'Translocations')
-
-grid.arrange(dup, del, inv, trx, ncol=2)
+# pdf('vaf_adjustment_scatter_v2.pdf', width=7.5, height=3.5)
+grid.arrange(dup, oth, ncol=2)
+# dev.off()
 ```
