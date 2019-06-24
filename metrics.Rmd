@@ -42,7 +42,6 @@ options(stringsAsFactors = F)
 ```{r source}
 source('R/metrics_funcs.R')
 source('R/util.R')
-source('R/plotting.R')
 source('R/load.R')
 ```
 
@@ -53,7 +52,9 @@ gg_color_hue <- function(n) {
   hcl(h=hues, l=65, c=100)[1:n]
 }
 myColors <- gg_color_hue(10)
-ccutoff <- subclonal_cutoff <- 0.9
+
+cutoff_snvs <- cutoff_svs <- subclonal_cutoff <- 0.7
+cutoff_cna <-  0.943
 
 basedir <- '001_svclone_results/'
 wd_truth <- '001_truth/'
@@ -193,8 +194,8 @@ for(p1 in seq(0.1, 0.9, 0.1)) {
     pyc$pv <- x[,3]
     pyc$best_ccf <- x[,4]
     
-    pyc$best_guess_subclonal <- pyc$best_ccf < ccutoff
-    pyc$pyc_guess_subclonal <- pyc$ccf < ccutoff
+    pyc$best_guess_subclonal <- pyc$best_ccf < subclonal_cutoff
+    pyc$pyc_guess_subclonal <- pyc$ccf < subclonal_cutoff
     
     pyc$mix <- mix
     pyc_all <- rbind(pyc_all, pyc)
@@ -259,8 +260,8 @@ for(nclus in c('4clus', '5clus')) {
     pyc$pv <- x[,3]
     pyc$best_ccf <- x[,4]
     
-    pyc$best_guess_subclonal <- pyc$best_ccf < ccutoff
-    pyc$pyc_guess_subclonal <- pyc$ccf < ccutoff
+    pyc$best_guess_subclonal <- pyc$best_ccf < subclonal_cutoff
+    pyc$pyc_guess_subclonal <- pyc$ccf < subclonal_cutoff
     pyc$chr <- NULL
 
     pyc$mix <- mix
@@ -628,9 +629,6 @@ for(i in seq(0.1, 0.9, 0.1)) {
 }
 
 metrics <- NULL
-cutoff_svs <- 0.7
-cutoff_snvs <- 0.7
-cutoff_cna <-  0.943
 for(p1 in seq(0.1, 0.9, 0.1)) {
     p2 <- 1 - p1
     minor <- min(p1, p2)
