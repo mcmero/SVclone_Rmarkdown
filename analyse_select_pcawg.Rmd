@@ -1,9 +1,31 @@
 ---
-title: "Analyse PCAWG samples"
+title: 'Analyse PCAWG samples'
 output: html_document
 ---
 
-```{r setup, include=FALSE, message=FALSE}
+# PCAWG results
+
+Analyse results from running SVclone on PCAWG samples.
+
+Generates figure 5, supplementary tables 3-4 and supplementary figures 5-7.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(autodep        = TRUE,
+                      cache          = TRUE,
+                      cache.path     = 'cache/',
+                      cache.comments = TRUE,
+                      echo           = FALSE,
+                      error          = FALSE,
+                      fig.path       = 'figures/',
+                      fig.width      = 6,
+                      fig.height     = 6,
+                      dev            = c('png', 'pdf'),
+                      message        = FALSE,
+                      warning        = FALSE)
+```
+
+
+```{r libraries}
 library(ggplot2)
 library(grid)
 library(gridExtra)
@@ -11,223 +33,419 @@ library(RColorBrewer)
 library(biomaRt)
 library(circlize)
 library(survival)
-library(rms)
 library(data.table)
 library(ggfortify)
-source('helper_functions.R')
+```
+
+
+```{r source}
+source('R/pcawg_helper_functions.R')
+source('R/plotting.R')
 source('pcawg-colour-palette/pcawg.colour.palette.R')
+```
 
-# PCAWG files
-sample_sheet <- '~/data/pcawg_data/PCAWG sample sheet for WGS, RNA-Seq and miRNA datasets - PCAWG sample sheet Dec14.tsv'
-expanded_list <- '~/data/pcawg_data/expanded_release_may2016.v1.4.tsv'
-purity_ploidies <- '~/data/pcawg_data/consensus.20170119.purity.ploidy.annotated.txt'
-clinical_stats <- '~/data/pcawg_data/pcawg_donor_clinical_August2016_v7.tsv - pcawg_donor_clinical_August2016_v7.tsv'
-specimen_histology <- '~/data/pcawg_data/pcawg_specimen_histology_August2016_v7.tsv'
 
-# load PCAWG files
-all_pcawg <- read.delim(sample_sheet, stringsAsFactors = F)
-pcawg_list <- read.delim(expanded_list, stringsAsFactors = F)
+```{r data_paths}
+# PCAWG data
+sample_sheet <- '~/data/pcawg_data/pcawg_sample_sheet.v1.4.2016-09-14.tsv'
+purity_ploidies <- '~/data/pcawg_data/consensus.20170217.purity.ploidy.txt'
+clinical_stats <- '~/data/pcawg_data/pcawg_donor_clinical_August2016_v7.tsv'
+icgc_clinical_stats <- '~/data/pcawg_data/icgc.donor.all_projects.tsv'
+specimen_histology <- '~/data/pcawg_data/pcawg_specimen_histology_August2016_v8.tsv'
+pcawg_summary <- '~/data/pcawg_data/summary_table_combined_annotations_v2.txt'
+pcawg_final_samples <- '~/data/pcawg_data/pcawg.wg11.final_sample_list.txt'
+pcawg_drivers <- '~/data/pcawg_data/driver_elements_previous_knowledge_cds_10072017.tsv'
+pcawg_driver_snvs <- '~/data/pcawg_data/TableS2_driver_point_mutations_annotation.txt'
+fbi_fraction <- '~/data/pcawg_data/pcawg_amplified_FBI_fraction.txt'
+consensus_cna_dir <-  '~/data/somatic_cna_annotated/'
+copynumbers_dir <- '~/data/full_cna/'
+consensus_snvs_dir <- '~/data/final_consensus_12oct_passonly/snv_mnv/'
+
+# SVclone output
+sv_dir <- '~/data/svclone_paper_20181219/'
+snv_dir <- '~/data/snv_results_20181219/'
+svinfos <- '~/data/svinfos_nov2018/'
+sv_filt_dir <- '~/data/filtsvs_nov2018/'
+```
+
+
+```{r variables}
+balanced <- c('INV', 'INTRX', 'TRX')
+unbalanced <- c('DEL', 'DUP', 'INTDUP')
+subclonal_cutoff <- 0.7
+```
+
+
+```{r load}
 pcawg_pp <- read.delim(purity_ploidies, stringsAsFactors = F)
 clin <- read.delim(clinical_stats, stringsAsFactors = F)
 pc_hist <- read.delim(specimen_histology, stringsAsFactors = F)
 
-# SVclone output files
-run_dir <- '~/data/final_run_ad/'
-svinfos <- '~/data/final_run_ad/svinfos/'
+pcawg_summary <- read.delim(pcawg_summary, stringsAsFactors = F)
+pcawg_summary <- pcawg_summary[pcawg_summary$is_preferred,]
+colnames(pcawg_summary)[colnames(pcawg_summary)%in%'samplename'] <- 'sample'
 
-# copy-number file directory
-copynumbers_dir <- '~/data/pcawg_data/somatic_cna_annotated/run1/'
+pcawg_final <- read.delim(pcawg_final_samples, sep='\t')
+pcawg_final <- pcawg_final[pcawg_final$multi_rep & pcawg_final$power,]
+colnames(pcawg_final)[1] <- 'sample'
 
-# consensus SNV directory
-snvs_dir <- '~/data/pcawg_data/final_consensus_12oct_passonly/snv_mnv/'
-subclonal_cutoff <- 0.9
+pcawg_driver_genes <- read.delim(pcawg_drivers, sep='\t')
+pcawg_driver_genes$gene <- sapply(pcawg_driver_genes$id, function(x){strsplit(x, "::")[[1]][3]})
+
+pcawg_driver_snvs <- read.delim(pcawg_driver_snvs)
+pcawg_driver_snvs$gene <- sapply(pcawg_driver_snvs$gene_id, function(x){strsplit(x, "::")[[1]][3]})
 ```
 
-# High-level PCAWG results
 
-Prepare summary table for subclonality analysis between samples.
+```{r consolidate_clinical_information}
+icgc_clin <- read.delim(icgc_clinical_stats, stringsAsFactors = F)
+fields <- c('icgc_donor_id', 'donor_survival_time', 
+            'donor_interval_of_last_followup', 'donor_vital_status')
+clin <- left_join(clin, icgc_clin[,fields], by='icgc_donor_id')
 
-```{r, cache=TRUE}
-sv_summary <- NULL
-for (aid in pcawg_list$tumor_wgs_aliquot_id) {
-    sv_ccert <- paste(run_dir, '/SVs/', aid, '_cluster_certainty.txt', sep='')
-    snv_ccert <- paste(run_dir, '/SNVs/', aid, '_cluster_certainty.txt', sep='')
-    if (file.exists(sv_ccert) | file.exists(snv_ccert)) {
-        pur <- pcawg_pp[pcawg_pp$samplename==aid,'purity']
-        if (file.exists(sv_ccert)) {
-            svs <- read.delim(sv_ccert, sep='\t')
-            sv_ccfs <- svs$average_proportion/pur
-            sv_sc_frac <- sum(sv_ccfs < subclonal_cutoff) / length(sv_ccfs)
-        } else {
-            svs <- data.frame()
-            sv_ccfs <- NA
-            sv_sc_frac <- NA
-        }
+clin$donor_vital_status <- clin$donor_vital_status.y
+clin[is.na(clin$donor_vital_status) | 
+             clin$donor_vital_status=='','donor_vital_status'] <- 
+    clin[clin$donor_vital_status=='','donor_vital_status.x']
 
-        if (file.exists(snv_ccert)) {
-            snvs <- read.delim(snv_ccert, sep='\t')
-            snv_ccfs <- snvs$average_proportion/pur
-            snv_sc_frac <- sum(snv_ccfs < subclonal_cutoff) / length(snv_ccfs)
-        } else {
-            snvs <- data.frame()
-            snv_ccfs <- NA
-            snv_sc_frac <- NA
-        }
+clin$donor_interval_of_last_followup <- clin$donor_interval_of_last_followup.y
+clin[is.na(clin$donor_interval_of_last_followup),'donor_interval_of_last_followup'] <- 
+    clin[is.na(clin$donor_interval_of_last_followup),'donor_interval_of_last_followup.x']
 
-        type <- strsplit(pcawg_list[pcawg_list$tumor_wgs_aliquot_id==aid, 'dcc_project_code'], '-')[[1]][1]
-        sv_table <- data.frame(sample=aid, nsv=nrow(svs), nsnv=nrow(snvs),
-                               sv_sc_frac=sv_sc_frac, type=type, snv_sc_frac=snv_sc_frac)
-        sv_summary <- rbind(sv_summary, sv_table)
+clin$donor_survival_time <- clin$donor_survival_time.y
+clin[is.na(clin$donor_survival_time),'donor_survival_time'] <- 
+    clin[is.na(clin$donor_survival_time),'donor_survival_time.x']
+clin[is.na(clin$donor_survival_time),'donor_survival_time'] <- 
+    clin[is.na(clin$donor_survival_time),'donor_interval_of_last_followup']
+colnames(clin)[1] <- 'donor_unique_id'
+
+fields <- c('icgc_donor_id', 'donor_survival_time', 'donor_vital_status')
+pcawg_summary_clinical <- left_join(pcawg_summary[,!colnames(pcawg_summary)%in%c('donor_survival_time')],
+                                    clin[,fields], by='icgc_donor_id')
+```
+
+
+```{r filter_clnical_info}
+#filter based on nrpcc
+pcawg_summary_clinical_filt<-pcawg_summary_clinical[pcawg_summary_clinical$nrpcc>=10,]
+
+#filter based on available clinical information
+pcawg_summary_clinical_filt<-pcawg_summary_clinical_filt[!is.na(pcawg_summary_clinical_filt$donor_survival_time)&
+                                                         !is.na(pcawg_summary_clinical_filt$donor_vital_status),]
+pcawg_summary_clinical_filt <- merge(pcawg_summary_clinical_filt, pcawg_final, by='sample')
+```
+
+## Supplementary Figure 5
+
+Number of SVs versus purity for all PCWAG samples on which SVclone was run with >0 SVs.
+
+```{r SuppFigure5}
+pur_vs_nsvs <- NULL
+for (sample in unique(pcawg_summary$sample)) {
+    svi <- paste(svinfos, sample, '_svinfo.txt', sep='')
+    pur <- pcawg_pp[pcawg_pp$samplename%in%sample, 'purity']
+    if(!file.exists(svi)) {next}
+    svs <- read.delim(svi)
+    if(nrow(svs) > 0) {
+        pur_vs_nsvs <- rbind(pur_vs_nsvs, data.frame(sample=sample, purity=pur, nsvs=nrow(svs)))
     }
 }
-samples <- unique(sv_summary$sample)
-write.table(sv_summary, 'tables/pcawg_sv_summary.tsv', sep='\t', quote=F, row.names=F)
-
-# sv_summary <- read.delim('tables/pcawg_sv_summary.tsv', sep='\t', stringsAsFactors = F)
+ggplot(pur_vs_nsvs, aes(nsvs, purity)) + geom_point(size=1) + theme_bw() + ylim(0, 1) + xlab('number of SVs')
 ```
 
-## Density plots
+$R^2$ of purity versus number of SVs.
 
-Fraction SV vs. fraction SNVs subclonal (tumour level)
+```{r R_squared}
+cor(pur_vs_nsvs$purity, pur_vs_nsvs$nsvs) ^ 2
+```
 
-```{r, fig.height=10, fig.width=7}
-lookup <- data.frame(sample=all_pcawg$aliquot_id, donor_unique_id=all_pcawg$donor_unique_id)
-lookup <- merge(lookup, 
-                pc_hist[,c('donor_unique_id','histology_abbreviation','histology_tier4')],
-                by='donor_unique_id')
-sv_summary <- merge(sv_summary, lookup, by='sample')
+Check fraction of samples called with single clonal cluster.
+
+```{r check_clonality}
+ncc_sv <- NULL
+ncc_snv <- NULL
+for (sample in pcawg_final$sample) {
+    sv_ss <- paste(sv_dir, sample, '/ccube_out/', sample, '_subclonal_structure.txt', sep='')
+    snv_ss <- paste(snv_dir, sample, '/ccube_out/snvs/', sample, '_subclonal_structure.txt', sep='')
+    pur <- pcawg_pp[pcawg_pp$samplename%in%sample,'purity']
+    if(file.exists(sv_ss)) {
+        sc <- read.delim(sv_ss)
+        if(sum(sc$n_ssms) < 10){next}
+        single_cc <- nrow(sc)==1 & all((sc$proportion / pur) < subclonal_cutoff)
+        ncc_sv <- c(ncc_sv, single_cc)
+    }
+    if(file.exists(snv_ss)) {
+        snc <- read.delim(snv_ss)
+        if(sum(snc$n_ssms) < 10){next}
+        single_cc <- nrow(snc)==1 & all((snc$proportion / pur) < subclonal_cutoff)
+        ncc_snv <- c(ncc_snv, single_cc)   
+    }
+}
+print('Proportion called using SV data:')
+sum(ncc_sv)/length(ncc_sv)
+
+print('Proportion called using SNV data:')
+sum(ncc_snv)/length(ncc_snv)
+```
+
+
+```{r summarise_results}
+sv_summary <- NULL
+for (sample in pcawg_summary$sample) {
+    pur <- pcawg_pp[pcawg_pp$samplename%in%sample,'purity']
+
+    sv_cc <- paste(sv_dir, sample, '/ccube_out/', sample, '_cluster_certainty.txt', sep='')
+    snv_cc <- paste(snv_dir, sample, '/ccube_out/snvs/', sample, '_cluster_certainty.txt', sep='')
+
+    if(!file.exists(sv_cc)) {next}
+    svcc <- read.delim(sv_cc, sep='\t')
+    svcc$mean_ccf <- as.numeric(apply(svcc[,c('average_proportion1', 'average_proportion2')] / pur,
+                                      1, mean, na.rm=T))
+
+    if(!file.exists(snv_cc)) {next}
+    snvcc <- read.delim(snv_cc, sep='\t')
+    snvcc$ccf <- snvcc$average_proportion / pur
+
+    sv_sc_frac <- sum(svcc$mean_ccf < subclonal_cutoff) / nrow(svcc)
+    snv_sc_frac <- sum(snvcc$ccf < subclonal_cutoff) / nrow(snvcc)
+
+    type <- strsplit(pcawg_summary[pcawg_summary$sample==sample, 'projectcode'],'-')[[1]][1]
+    sv_table <- data.frame(sample=sample, nsv=nrow(svcc), nsnv=nrow(snvcc),
+                           sv_sc_frac=sv_sc_frac, snv_sc_frac=snv_sc_frac, type=type)
+    sv_summary <- rbind(sv_summary, sv_table)
+}
+```
+
+## Figure 5a
+
+PCAWG SV versus SNV subclonal fractions. Lines repesent density.
+
+```{r Figure5a, fig.height=8, fig.height=7}
+sv_sum_forplot <- distinct(left_join(sv_summary, pcawg_summary, by='sample'))
 
 tmp <- pcawg.colour.palette(scheme='organ.system', return.scheme=T)
 scheme <- tmp$colours; names(scheme) <- tmp$levels
-types <- as.character(sapply(sv_summary$histology_abbreviation,function(x){tolower(substr(x,1,3))}))
+types <- as.character(sapply(sv_sum_forplot$histology_abbreviation,function(x){tolower(substr(x,1,3))}))
 
 col_mapping <- sapply(unique(types), function(x){scheme[grep(x,names(scheme))]})
 names(col_mapping) <- sapply(names(col_mapping), function(x){strsplit(x,'\\.')[[1]][1]})
 col_mapping <- data.frame(type=names(col_mapping), colour=col_mapping)
 
-tmp_hist <- data.frame(histology_abbreviation=sv_summary$histology_abbreviation, type=types)
+tmp_hist <- data.frame(histology_abbreviation=sv_sum_forplot$histology_abbreviation, type=types)
 tmp_hist <- merge(tmp_hist, col_mapping, by='type')
 tmp_hist <- unique(tmp_hist[,2:3])
 pcawg_cols <- as.character(tmp_hist$colour)
 names(pcawg_cols) <- tmp_hist$histology_abbreviation
 pcawg_cols[grep('Lung',names(pcawg_cols))] <- '#DC85EE' # replace colour as pcawg lung colour is white
 
-sv_sum_filt <- sv_summary[sv_summary$nsv > 10 & sv_summary$nsnv > 10,]
+sv_sum_filt <- sv_sum_forplot[sv_sum_forplot$nsv > 10 & sv_sum_forplot$nsnv > 10,]
 n_per_type <- table(sv_sum_filt$histology_abbreviation)
-sv_sum_filt <- unique(sv_sum_filt[sv_sum_filt$histology_abbreviation%in%names(n_per_type[n_per_type>=20]),])
-svc <- sv_sum_filt
+sv_sum_filt <- distinct(sv_sum_filt[sv_sum_filt$histology_abbreviation%in%names(n_per_type[n_per_type>=20]),])
 
-ggplot(sv_sum_filt, aes(snv_sc_frac, sv_sc_frac, colour=histology_abbreviation)) + geom_density2d() + geom_point() + 
-    facet_wrap(~histology_abbreviation, ncol=4) + theme_minimal() + ylab('Fraction subclonal SVs') + 
+svsf <- sv_sum_filt[sv_sum_filt$sample %in% pcawg_summary$sample[pcawg_summary$nrpcc>10],]
+svsf <- merge(svsf, pcawg_final, by='sample')
+tmp <- data.table(svsf)[,length(sample), by='histology_detailed']
+svsf <- svsf[svsf$histology_detailed %in% tmp[tmp$V1>10,]$histology_detailed,]
+svsf <- svsf[!is.na(svsf$sv_sc_frac) & !is.na(svsf$snv_sc_frac),]
+
+ggplot(svsf, aes(snv_sc_frac, sv_sc_frac, colour=histology_abbreviation)) + geom_density2d() + geom_point() + 
+    facet_wrap(~histology_detailed, ncol=4) + theme_minimal() + ylab('Fraction subclonal SVs') + 
     xlab('Fraction subclonal SNVs') +  scale_colour_manual(values=pcawg_cols) + 
     scale_x_continuous(breaks=c(0,0.5,1)) + scale_y_continuous(breaks=c(0,0.5,1)) +
     geom_abline(intercept=0, slope=1, colour='grey') +
-    theme(legend.position="none",
-          strip.text.x = element_text(size = 12),
-          plot.title = element_text(size = 16, face = "bold"),
+    theme(legend.position='none',
+          strip.text.x = element_text(size = 10),
           axis.title = element_text(size = 16),
           axis.text.x = element_text(size = 12),
           axis.text.y = element_text(size = 12),
-          panel.spacing = unit(1, "lines"))
+          panel.spacing = unit(1, 'lines'))
 ```
 
-## Summary table by subclonal SV enrichment.
+## Supplementary Table 3
 
-```{r}
-s20_or_over <- unique(svc$histology_abbreviation)
+PCAWG SV versus SNV statistics per histological group.
+
+```{r SuppTable3}
+s20_or_over <- unique(svsf$histology_detailed)
 sv_sc_by_type <- NULL
 for (type in s20_or_over) {
-    n_samples <- sum(svc$histology_abbreviation%in%type)
-    svc_type <- svc[svc$histology_abbreviation%in%type,]
+    n_samples <- sum(svsf$histology_detailed%in%type)
+    svc_type <- svsf[svsf$histology_detailed%in%type,]
     subc_sv_samples <- sum(svc_type$sv_sc_frac>svc_type$snv_sc_frac)
     pgss <- subc_sv_samples / n_samples
     type_row <- data.frame(histology=type, n_samples=n_samples,
                            subclonal_sv_enriched_samples=subc_sv_samples,
-                           prop_greater_subclonal_svs=pgss,
-                           mean_svs=round(mean(svc_type$nsv),2), mean_snvs=round(mean(svc_type$nsnv),2))
+                           prop_greater_subclonal_svs=round(pgss,2),
+                           mean_svs=round(mean(svc_type$nsv)), mean_snvs=round(mean(svc_type$nsnv)))
     sv_sc_by_type <- rbind(sv_sc_by_type, type_row)
                            
 }
 sv_sc_by_type <- sv_sc_by_type[order(sv_sc_by_type$prop_greater_subclonal_svs, decreasing=T),]
+sv_sc_by_type <- rbind(sv_sc_by_type, data.frame(histology='total or mean', 
+                                                 n_samples=sum(sv_sc_by_type$n_samples),
+                                                 subclonal_sv_enriched_samples=sum(sv_sc_by_type$subclonal_sv_enriched_samples),
+                                                 prop_greater_subclonal_svs=mean(sv_sc_by_type$prop_greater_subclonal_svs),
+                                                 mean_svs=mean(sv_sc_by_type$mean_svs),
+                                                 mean_snvs=mean(sv_sc_by_type$mean_snvs)))
 print(sv_sc_by_type)
 ```
 
-# Subclonal balanced rearrangement analysis
 
-Check for enrichment in all samples with >10 SVs
-
-```{r}
-balanced <- c('INV', 'INTRX')
-svc_filt <- sv_summary[sv_summary$nsv > 10,]
+```{r classify_SCNR}
 all_bal_enr <- NULL
 
-for (sample in svc_filt$sample) {
-
-    svinfo <- paste(svinfos, sample,'_svinfo.txt',sep='')
-    ccfs <- paste(run_dir, '/SVs/', sample, '_vaf_ccf.txt',sep='')
-
-    if(!file.exists(svinfo) | !file.exists(ccfs)){
-        print(paste('no SV info file for', sample))
-        next
-    }
-    pur <- pcawg_pp[pcawg_pp$samplename==sample,]$purity
-    dat <- get_dat(sample, pur); sc <- get_sc(sample)
-    sc <- sc[sc$CCF<subclonal_cutoff,]
-    bbf <- paste(copynumbers_dir, sample, 
-                 '.run1.consensus.20170119.somatic.cna.annotated.txt', sep='')
+for (sample in pcawg_summary_clinical_filt$sample) {
+    sample_info<-pcawg_summary_clinical_filt[pcawg_summary_clinical_filt$sample%in%sample,]
     
-    balanced_total <- sum(dat$classification%in%balanced)
-    sv_total <- nrow(dat)
+    snv_cc <- paste(snv_dir, sample, '/ccube_out/snvs/', sample, '_cluster_certainty.txt', sep='')
+    sv_ss <- paste(sv_dir, sample, '/ccube_out/', sample, '_subclonal_structure.txt', sep='')
+    snv_ss <- paste(snv_dir, sample, '/ccube_out/snvs/', sample, '_subclonal_structure.txt', sep='')
+    svf <- paste(sv_filt_dir, sample, '_filtered_svs.tsv', sep='')
+    sv_ccert <- paste(sv_dir, sample, '/ccube_out/', sample, '_cluster_certainty.txt', sep='')
+    pur <- pcawg_pp[pcawg_pp$samplename%in%sample,'purity']
+    pl <- pcawg_pp[pcawg_pp$samplename%in%sample,'ploidy']
+    sv_inf <- paste(svinfos, sample, '_svinfo.txt', sep='')
     
-    for (clus in sc$cluster) {
-        gtitle <- paste('clus', clus)
-        
-        # balanced SV enrichment test
-        clus_svs <- dat[dat$most_likely_assignment==clus,]
-        sample_size <- nrow(clus_svs)
-        n_balanced <- sum(clus_svs$classification%in%balanced)
-        
-        pval <- phyper(n_balanced - 1, balanced_total, 
-                       (sv_total - balanced_total), sample_size, lower.tail=FALSE)
+    if(!file.exists(sv_ss)) {next}
+    sc <- read.delim(sv_ss, sep='\t')
+    sc$CCF <- sc$proportion / pur
+    
+    if(!file.exists(snv_ss)) {next}
+    snvc <- read.delim(snv_ss, sep='\t')
+    snvc$CCF <- snvc$proportion / pur
+    
+    if(!file.exists(snv_cc)) {next}
+    sncc <- read.delim(snv_cc, sep='\t')
+    sncc$CCF <- sncc$average_proportion / pur
+    
+    if(!file.exists(sv_inf) | !file.exists(sv_ccert)) {next}
+    svs <- read.delim(sv_ccert, sep='\t',stringsAsFactors = F)
+    svi <- read.delim(sv_inf, sep='\t',stringsAsFactors = F)
+    
+    svs$cluster <- svs$most_likely_assignment
+    svs <- inner_join(svs, sc, by='cluster')
+    
+    svs$chr1 <- as.character(svs$chr1); svs$chr2 <- as.character(svs$chr2)
+    svi$chr1 <- as.character(svi$chr1); svi$chr2 <- as.character(svi$chr2)
+    svs <- left_join(svi, svs, by=c('chr1', 'pos1', 'dir1', 'chr2', 'pos2', 'dir2'))
+    svs <- svs[!(is.na(svs$average_proportion1) & is.na(svs$average_proportion2)),]
+    svs$mean_ccf <- as.numeric(apply(svs[,c('average_proportion1', 'average_proportion2')] / pur,
+                                  1, mean, na.rm=T))
+    svs$max_ccf <- as.numeric(apply(svs[,c('average_proportion1', 'average_proportion2')] / pur,
+                                  1, max, na.rm=T))
+    
+    #calculate fractions of svs and snvs based on clonal cluster
+    frac_sv<-sum(svs$mean_ccf < subclonal_cutoff) / nrow(svs)
+    frac_snv<-sum(sncc$CCF < subclonal_cutoff) / nrow(sncc)
 
-        all_bal_enr <- rbind(all_bal_enr, 
-                             data.frame(sample=sample, clus=clus, 
-                                        CCF=sc[sc$cluster==clus,'CCF'], pval=pval))
-    }
+    if(frac_sv>frac_snv){
+        classification<-'High SV heterogeneity'
+
+        sv_total <- sum(sc$n_ssms)
+        balanced_this_cluster<-sum(svs[svs$mean_ccf<subclonal_cutoff,]$classification%in%balanced)
+        balanced_total <- sum(svs$classification%in%balanced)
+        sv_this_cluster<-sum(svs$mean_ccf<subclonal_cutoff)
+        pval <- phyper(balanced_this_cluster - 1, balanced_total,
+               (sv_total - balanced_total), sv_this_cluster, lower.tail=FALSE)
+         if(pval < 0.05)
+         {
+             classification <- 'SCNR'
+         }
+     } else{
+         classification<-'Other'
+     }
+
+    all_bal_enr <- rbind(all_bal_enr, data.frame(sample=sample,
+                                                 nsv=sum(sc$n_ssms),classification))
 }
-all_bal_enr$FDR <- p.adjust(all_bal_enr$pval, method = 'BH')
-all_bal_enr$significant <- all_bal_enr$FDR<0.05
-all_bal_enr <- merge(all_bal_enr, svc, by='sample', all.x=T)
-
-any_bal_enr <- data.table(all_bal_enr)[,any(significant),by=c('sample','histology_abbreviation')]
-any_bal_enr <- any_bal_enr[any_bal_enr$V1,]
-bal_enr_samples <- as.character(any_bal_enr$sample)
-
-# tumour types with SCNR samples
-bal_enr_tbl <- table(any_bal_enr$histology_abbreviation)
-print(data.frame(bal_enr_tbl))
 ```
 
-Check if SCNR phenotype has any contributor biases.
+## Supplementary Figure 6
 
-```{r}
-check_project <- svc_filt
-colnames(check_project)[1] <- 'aliquot_id'
-check_project <- merge(check_project, all_pcawg, by='aliquot_id')
-check_project$bal_enr <- check_project$aliquot_id%in%any_bal_enr$sample
-check_project <- unique(check_project)
-    
+Subset classification across cancer types, ranked by number of SCNR samples.
+
+```{r SuppFigure6, fig.height=5, fig.width=9}
+x <- left_join(all_bal_enr, pcawg_summary, by='sample')
+cc <- table(x[x$classification%in%'SCNR','cancer_type'])
+ranks <- names(cc[order(cc, decreasing=T)])
+
+no_scnr <- table(x$cancer_type[!x$cancer_type%in%ranks])
+no_scnr <- no_scnr[no_scnr>0]
+no_scnr <- names(no_scnr[order(no_scnr, decreasing=T)])
+
+x$cancer_type <- factor(x$cancer_type, levels=c(ranks, no_scnr))
+
+# livers
+cc[names(cc)=='LIRI'][1] / sum(pcawg_summary$cancer_type%in%'LIRI')
+
+# ovarians
+cc[names(cc)=='OV'][1] / sum(pcawg_summary$cancer_type%in%'OV')
+
+# pancs
+cc[names(cc)=='PACA'][1] / sum(pcawg_summary$cancer_type%in%'PACA')
+
+cols <- brewer.pal(3, 'Dark2')
+names(cols) <- c('Other', 'SCNR', 'High SV heterogeneity')
+
+ggplot(x, aes(cancer_type, fill=classification)) + geom_bar(stat='count') + 
+    theme_bw() + theme(axis.text.x = element_text(angle = 90)) + xlab('cancer type') +
+    scale_fill_manual(values = cols)
+```
+
+
+```{r survival_analysis}
+xclin <- distinct(left_join(pcawg_summary_clinical_filt, all_bal_enr, by='sample'))
+xclin <- xclin[!is.na(xclin$donor_vital_status) & !is.na(xclin$donor_survival_time),]
+
+xclin$age.cat <- car::recode(as.numeric(xclin$donor_age_at_diagnosis), 
+                             'lo:39=1; 40:44=2; 45:49=3; 50:54=4; 55:59=5; 60:64=6; 65:69=7; 70:74=8; 75:79=9; 80:hi=10')
+xclin$sv.bin<-car::recode(as.numeric(xclin$nsv), 'lo:100=1; 101:200=2; 201:hi=3')
+
+surv <- xclin
+surv$SurvObj <- with(surv, Surv(donor_survival_time, donor_vital_status == 'deceased'))
+km.by.group <- survfit(SurvObj ~ classification, data = surv, conf.type = 'log-log')
+print(km.by.group)
+```
+
+## Figure 5b
+
+Survival curve comparing SCNR, high-SV heterogeneity and all other PCAWG samples.
+
+```{r Figure5b, fig.height=4, fig.width=6}
+xclin$classification <- factor(xclin$classification, levels=c('Other', 'High SV heterogeneity', 'SCNR'))
+fit <- survfit(Surv(donor_survival_time, donor_vital_status == 'deceased') ~ classification, data = xclin)
+
+autoplot(fit, censor=FALSE) + theme_minimal() + ylab('Survival probability') + 
+    xlab('Donor survival time') + scale_colour_manual(values = cols) + 
+    scale_fill_manual(values = cols) + 
+    theme(legend.position='bottom', 
+            axis.title = element_text(size = 16),
+            axis.text.x = element_text(size = 18),
+            axis.text.y = element_text(size = 18),
+            legend.text = element_text(size=15))
+
+xclin$status <- as.numeric(xclin$donor_vital_status == 'deceased')
+print(summary(coxph(Surv(donor_survival_time, status) ~ classification + strata(histology_tier4, age.cat, sv.bin),
+                    xclin)))
+```
+
+Check whether there is any bias of enrichment of SCNR samples by project code.
+
+```{r check_project_SCNR_enrichment}
+check_project <- xclin
+check_project$bal_enr <- as.numeric(xclin$classification %in% 'SCNR')
+
 proj_enrichment <- NULL
-for (hst in unique(any_bal_enr$histology_abbreviation)) {
+for (hst in unique(check_project$histology_abbreviation)) {
     tmp <- unique(check_project[check_project$histology_abbreviation%in%hst,])
-    if(length(unique(tmp$dcc_project_code))==1){next}
+    if(length(unique(tmp$projectcode))==1){next}
     
     enr_total <- sum(tmp$bal_enr)
     hist_total <- nrow(tmp)
     
-    for (project in unique(tmp$dcc_project_code)) {
-        n_enr_proj <- sum(tmp$dcc_project_code%in%project & tmp$bal_enr)
-        proj_total <- sum(tmp$dcc_project_code%in%project)
+    for (project in unique(tmp$projectcode)) {
+        n_enr_proj <- sum(tmp$projectcode%in%project & tmp$bal_enr)
+        proj_total <- sum(tmp$projectcode%in%project)
         
         pval <- phyper(n_enr_proj - 1, enr_total, 
                    (hist_total - enr_total), proj_total, lower.tail=FALSE)
@@ -250,127 +468,192 @@ print(proj_enrichment)
 ```
 
 
-## SCNR sample plots
+```{r sample_class_output}
+# write list of SCNR and other samples for linked SV analysis (see test_for_linked_svs.ipynb)
+bal_enr_samples <- all_bal_enr$sample[all_bal_enr$classification%in%'SCNR']
+other_samples <- all_bal_enr$sample[all_bal_enr$classification%in%'Other']
+hsvh_samples <- all_bal_enr$sample[all_bal_enr$classification%in%'High SV heterogeneity']
 
-Cluster plots for SCNR tumours.
-
-```{r, fig.height=3, fig.width=10}
-for (sample in bal_enr_samples) {
-    pur <- pcawg_pp[pcawg_pp$samplename==sample,]$purity
-    dat <- get_dat(sample, pur); sc <- get_sc(sample)
-    dat_snv <- get_dat_snvs(sample, pur)
-    
-    dat_all <- data.frame(CCF=dat$CCF, most_likely_assignment=dat$most_likely_assignment,
-                          classification=dat$classification)
-    dat_all <- rbind(dat_all, data.frame(CCF=dat_snv$CCF,
-                                         most_likely_assignment=dat_snv$most_likely_assignment,
-                                         classification='SNV'))
-    
-    sample <- strsplit(sample, '-')[[1]][1]
-    plot_all <- plot_hist_func(dat_all, sc, pur, varclass=TRUE, vaf=FALSE, title=sample) + 
-                    theme(legend.text = element_text(size = 8))
-    
-    clon <- sc[sc$CCF>=subclonal_cutoff, 'cluster'][1]
-    if(!is.na(clon)) {
-        gtitle <- 'clonal SVs'
-        p_clon <- plot_hist_func(dat, sc, pur, varclass=TRUE, vaf=FALSE, clus = clon, title=gtitle, ylim=40)
-        p_clon <- p_clon + theme(legend.text = element_text(size = 8))
-    } else {p_clon <- grid.rect(gp=gpar(col='white'))}
-    
-    subclon <- dat[dat$CCF < subclonal_cutoff,]
-    if(nrow(subclon)>0) {
-        gtitle <- 'subclonal SVs'
-        p_sclon <- plot_hist_func(subclon, sc, pur, varclass=TRUE, vaf=FALSE, title=gtitle, ylim=40)
-        p_sclon <- p_sclon + theme(legend.text = element_text(size = 8))
-    } else {p_sclon <- grid.rect(gp=gpar(col='white'))}
-
-    if(is.na(clon) & nrow(subclon)==0){next}
-    suppressWarnings(grid.arrange(plot_all, p_sclon, p_clon, nrow = 1))
-}
+system('mkdir -p pcawg_bal_enr')
+write.table(bal_enr_samples, file='pcawg_bal_enr/bal_enr_samples.txt',
+            row.names=F, col.names=F, quote=F)
+write.table(other_samples, file='pcawg_bal_enr/other_samples.txt',
+            row.names=F, col.names=F, quote=F)
 ```
 
-Circos plots for SCNR tumours.
 
-```{r, fig.height=3, fig.width=3, cache=FALSE}
-for (sample in bal_enr_samples) {
-    print(sample)
-    pur <- pcawg_pp[pcawg_pp$samplename==sample,]$purity
-    dat <- get_dat(sample, pur); sc <- get_sc(sample)
-    bbf <- paste(copynumbers_dir, sample, 
-                 '.run1.consensus.20170119.somatic.cna.annotated.txt', sep='')
-    if(nrow(read.delim(bbf))>0) {
-        draw_circos_clonal(dat, sample, pur, bbf)
-    }
-}
+## Supplementary Figure 7
+
+Fold back inversion (FBI) fraction for high-SV heterogeneity, other and SCNR genotypes.
+
+```{r SuppFigure7}
+fbi <- read.table(fbi_fraction,sep='\t',header=T,stringsAsFactors = F)
+fbi_svinfo <- merge(fbi,all_bal_enr,by.x='ID',by.y='sample')
+
+ggplot(fbi_svinfo,aes(x=classification,y=amp_FBI)) +
+    geom_boxplot(outlier.shape = NA, size=0.2) + theme_bw() + xlab('') + ylab('amplified FBI fraction')+
+    geom_jitter(width=0.2, alpha=0.4, size=0.6)
 ```
 
-## Survival analysis
+## Figure 5c-f
 
-Survival plot for SCNR phenotype patients
+Plots for representative SCNR PCWAG sample bef21282.
 
-```{r, fig.height=4, fig.width=7}
-all.bal.ids <- pcawg_list[pcawg_list$tumor_wgs_aliquot_id%in%all_bal_enr[all_bal_enr$significant,'sample'],]$donor_unique_id
+Circos plot.
 
-bal.clin <- clin
-sc.sv.ids <- pcawg_list[pcawg_list$tumor_wgs_aliquot_id%in%svc[svc$sv_sc_frac > svc$snv_sc_frac,'sample'],]$donor_unique_id
-bal.clin$subset <- 'Other'
-bal.clin[bal.clin$X..donor_unique_id%in%sc.sv.ids,]$subset <- 'High Subclonal SV Fraction'
-bal.clin[bal.clin$X..donor_unique_id%in%all.bal.ids,]$subset <- 'SCNR Phenotype'
-bal.clin$subset <- factor(bal.clin$subset, levels=c('High Subclonal SV Fraction', 'SCNR Phenotype', 'Other'))
+```{r Figure5c}
+sample <- 'bef21282-c622-11e3-bf01-24c6515278c0' # select representative sample
+pur <- pcawg_pp[pcawg_pp$samplename==sample,]$purity
 
-bal.clin$SurvObj <- with(bal.clin, Surv(donor_survival_time, donor_vital_status == 'deceased'))
-km.by.group <- survfit(SurvObj ~ subset, data = bal.clin, conf.type = "log-log")
-print(km.by.group)
+sv_cc <- paste(sv_dir, sample, '/ccube_out/', sample, '_cluster_certainty.txt', sep='')
+snv_cc <- paste(snv_dir, sample, '/ccube_out/snvs/', sample, '_cluster_certainty.txt', sep='')
+snv_sc <- paste(snv_dir, sample, '/ccube_out/snvs/', sample, '_subclonal_structure.txt', sep='')
+sv_sc <- paste(sv_dir, sample, '/ccube_out/', sample, '_subclonal_structure.txt', sep='')
+sv_in <- paste(svinfos, sample, '_svinfo.txt', sep='')
 
-survdiff(formula=Surv(donor_survival_time, donor_vital_status == 'deceased') ~ subset, data = bal.clin)
-fit <- survfit(Surv(donor_survival_time, donor_vital_status == 'deceased') ~ subset, data = bal.clin)
+svcc <- read.delim(sv_cc, sep='\t')
+svcc$average_proportion <- as.numeric(apply(svcc[,c('average_proportion1', 'average_proportion2')] / pur,
+                                  1, mean, na.rm=T))
+svcc$CCF <- as.numeric(apply(svcc[,c('average_proportion1', 'average_proportion2')] / pur,
+                                  1, mean, na.rm=T))
 
-autoplot(fit, censor=FALSE) + theme_minimal() + ylab('Survival probability') + 
-    xlab('Donor survival time') + scale_color_brewer(palette = 'Dark2') + 
-    scale_fill_brewer(palette = 'Dark2') + 
-    theme(legend.position="bottom", 
-            axis.title = element_text(size = 16),
-            axis.text.x = element_text(size = 18),
-            axis.text.y = element_text(size = 18),
-            legend.text = element_text(size=15))
+bbf <- paste0('~/data/somatic_cna_annotated/', sample, 
+             '.consensus.20170119.somatic.cna.txt')
+
+draw_circos_clonal(svcc, sample, pur, bbf)
 ```
 
-Calculate hazard ratio, stratified by histology (tier 4) and number of SVs.
+SNV CCF histogram.
 
-```{r}
-x <- bal.clin[!is.na(bal.clin$donor_vital_status) & 
-              !is.na(bal.clin$donor_survival_time),]
-x$status <- 0; x[x$donor_vital_status=='deceased', 'status'] <- 1
-colnames(x)[1] <- 'donor_unique_id'
-x <- unique(merge(x, sv_summary[,-ncol(sv_summary)], by='donor_unique_id'))
-x <- unique(merge(x, lookup[,-c(2,3)], by='donor_unique_id'))
-x$subset <- factor(x$subset, levels=c('Other', 'High Subclonal SV Fraction', 'SCNR Phenotype'))
+```{r Figure5d, fig.height=5, fig.width=7}
+sc <- read.delim(sv_sc, sep='\t')
+sc$CCF <- sc$proportion / pur
 
-# sv bins
-sv_bins <- c(-1, seq(0, 500, 100), max(x$nsv))
-x$sv_bin <- .bincode(x$nsv, sv_bins)
-svb <- c("0", paste(sv_bins[2:7]+1, sv_bins[3:8], sep='-'))
-x$sv_bin <- svb[x$sv_bin]
+svi <- read.delim(sv_in, sep='\t')[,c('chr1','pos1','dir1','chr2','pos2','dir2','classification')]
+svi$chr1 <- as.character(svi$chr1); svi$chr2 <- as.character(svi$chr2)
+svcc$chr1 <- as.character(svcc$chr1); svcc$chr2 <- as.character(svcc$chr2)
+svcc <- left_join(svcc, svi, by=c('chr1','pos1','dir1','chr2','pos2','dir2'))
 
-test <- list(time=x$donor_survival_time,
-             status=x$status,
-             x=x$subset,
-             hist=x$histology_abbreviation,
-             hist4=x$histology_tier4,
-             age=x$donor_age_at_diagnosis,
-             sv_bin=x$sv_bin)
+snvs <- read.delim(snv_cc, sep='\t')
+snvs$CCF <- snvs$average_proportion / pur
+snvs$classification <- 'SNV'
+
+snsc <- read.delim(snv_sc, sep='\t')
+snsc$CCF <- snsc$proportion / pur
+
+plot_hist_func(snvs, snsc, pur, varclass=TRUE, vaf=FALSE, clus = -1, title='SNVs')
 ```
 
-Stratified by age, histology and SVs
+Subclonal SVs CCF histogram.
 
-```{r}
-print(suppressWarnings(summary(coxph(Surv(time, status) ~ x + age + hist + sv_bin, test))))
+```{r Figure5e, fig.height=5, fig.width=7}
+plot_hist_func(svcc[svcc$CCF<subclonal_cutoff,], sc[sc$CCF < subclonal_cutoff,], 
+                 pur, varclass=TRUE, vaf=FALSE, clus = -1,
+                 title='subclonal SVs') + ylim(0,20)
 ```
 
-Stratified by histology (tier 4) and SVs
+Clonal SVs CCF histogram.
 
-```{r}
-print(suppressWarnings(summary(coxph(Surv(time, status) ~ x +
-                        strata(as.factor(hist4)) +
-                        strata(as.factor(sv_bin)), test))))
+```{r Figure5f, fig.height=5, fig.width=7}
+plot_hist_func(svcc[svcc$CCF>=subclonal_cutoff,], sc[sc$CCF >= subclonal_cutoff,], 
+                 pur, varclass=TRUE, vaf=FALSE, clus = -1,
+                 title='clonal SVs') + ylim(0,20)
 ```
+
+
+```{r load_annotation}
+mart <- useMart("ENSEMBL_MART_ENSEMBL", 
+                host="grch37.ensembl.org", 
+                dataset="hsapiens_gene_ensembl")
+ensg_attr <- c('external_gene_name','ensembl_gene_id',
+               'chromosome_name','exon_chrom_start','exon_chrom_end','start_position','end_position')
+ensg <- getBM(mart=mart, attributes=ensg_attr, filters='with_refseq_peptide', values=TRUE)
+ensg <- ensg[ensg$chromosome_name%in%as.character(c(1:22, 'X','Y')),]
+
+# genomic ranges of all exons of protein-coding genes
+grx_ex <- GRanges(seqnames = ensg$chromosome_name, 
+                  ranges = IRanges(start = ensg$exon_chrom_start, 
+                                   end = ensg$exon_chrom_end),
+                  genes = ensg$external_gene_name)
+
+ens_gene_only <- distinct(data.frame(ensg[,c('external_gene_name','chromosome_name','start_position','end_position')]))
+colnames(ens_gene_only) <- c('gene', 'chrom', 'start', 'end')
+
+# genomic ranges of genes starts and ends only
+grx <- unique(GRanges(seqnames = ens_gene_only$chrom, 
+                  ranges = IRanges(start = ens_gene_only$start, end = ens_gene_only$end),
+                  genes = ens_gene_only$gene))
+```
+
+Enrichment of point mutations in driver genes per cohort versus background (other samples).
+
+```{r snv_driver_analysis}
+all_drivers <- get_snv_drivers(pcawg_driver_snvs, pcawg_final$sample, pcawg_pp, snv_dir=snv_dir, get_CCF = T)
+clonal_driver_hits <- all_drivers[all_drivers$CCF>subclonal_cutoff,]
+
+driv_scnr <- clonal_driver_hits[clonal_driver_hits$sample%in%bal_enr_samples,]
+driv_hsvh <- clonal_driver_hits[clonal_driver_hits$sample%in%hsvh_samples,]
+driv_other <- clonal_driver_hits[clonal_driver_hits$sample%in%other_samples,]
+
+n_scnr <- sum(all_bal_enr$classification%in%'SCNR')
+n_hsvh <- sum(all_bal_enr$classification%in%'High SV heterogeneity')
+
+print('SCNR samples')
+calculate_driver_enrichment(driv_scnr, clonal_driver_hits, n_scnr, nrow(pcawg_final))
+print('HSVH samples')
+calculate_driver_enrichment(driv_hsvh, clonal_driver_hits, n_hsvh, nrow(pcawg_final))
+```
+
+
+```{r get_gene_hits}
+scnr_hits <- get_all_hits(bal_enr_samples, pcawg_driver_genes,
+                         pcawg_driver_snvs, pcawg_pp, 
+                         sv_dir, snv_dir, xclin,
+                         consensus_snvs_dir, consensus_cna_dir)
+scnr_hz <- get_homozygous_hits(scnr_hits, subclonal_component = T)
+scnr_hp <- get_hit_proportions(scnr_hz, cutoff = 0.01)
+
+hsvh_hits <- get_all_hits(hsvh_samples, pcawg_driver_genes,
+                         pcawg_driver_snvs, pcawg_pp, 
+                         sv_dir, snv_dir, xclin,
+                         consensus_snvs_dir, consensus_cna_dir)
+hsvh_hz <- get_homozygous_hits(hsvh_hits, subclonal_component = T)
+hsvh_hp <- get_hit_proportions(hsvh_hz, cutoff = 0.01)
+```
+
+## Supplementary Table 5
+
+Variants involved in candidate bi-allelic hits of driver genes in HSVH and SCNR cohorts. Percentages indicate fraction of cohort affected by at least one such event. Hits columns indicate the number of clonal and subclonal genes affected per cohort by the variant type.
+
+```{r SuppTable5}
+x <- data.frame(hsvh_hits, cohort='HSVH')
+x <- rbind(x, data.frame(scnr_hits, cohort='SCNR'))
+x$variant <- 'SNV/INDEL'
+x$variant[x$event%in%balanced] <- 'Balanced SV'
+x$variant[x$event%in%unbalanced] <- 'Unbalanced SV'
+x$variant[x$event%in%c('LoH')] <- 'LoH'
+
+tmp <- data.table(x[x$clonality=='clonal',])[, length(unique(sample)), by=c('variant', 'cohort')]
+res <- data.table(x[x$clonality=='subclonal',])[, length(unique(sample)), by=c('variant', 'cohort')]
+res <- left_join(tmp, res, by=c('variant', 'cohort'))
+tmp <- data.table(x[x$clonality=='clonal',])[, length(gene), by=c('variant', 'cohort')]
+res <- left_join(res, tmp, by=c('variant', 'cohort'))
+tmp <- data.table(x[x$clonality=='subclonal',])[, length(gene), by=c('variant', 'cohort')]
+res <- left_join(res, tmp, by=c('variant', 'cohort'))
+colnames(res)[3:6] <- c('clonal_num', 'subclonal_num', 'clonal_hits', 'subclonal_hits')
+
+res$perc_clonal_affected <- NA; res$perc_subclonal_affected <- NA
+res[res$cohort%in%'SCNR','perc_clonal_affected'] <- res[res$cohort%in%'SCNR',]$`clonal_num` / n_scnr
+res[res$cohort%in%'SCNR','perc_subclonal_affected'] <- res[res$cohort%in%'SCNR',]$`subclonal_num` / n_scnr
+res[res$cohort%in%'HSVH','perc_clonal_affected'] <- res[res$cohort%in%'HSVH',]$`clonal_num` / n_hsvh
+res[res$cohort%in%'HSVH','perc_subclonal_affected'] <- res[res$cohort%in%'HSVH',]$`subclonal_num` / n_hsvh
+
+res$perc_clonal_affected <- round(res$perc_clonal_affected * 100, 2)
+res$perc_subclonal_affected <- round(res$perc_subclonal_affected * 100, 2)
+
+res$clonal_num <- paste0(paste(res$clonal_num, res$perc_clonal_affected, sep=' ('),'%)')
+res$subclonal_num <- paste0(paste(res$subclonal_num, res$perc_subclonal_affected, sep=' ('),'%)')
+
+print(res[,1:6])
+```
+
