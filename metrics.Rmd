@@ -72,26 +72,26 @@ snv_data <- NULL
 for(i in seq(0.1, 0.9, 0.1)) {
     mix <- paste(i, 1-i, sep='-')
     basename <- paste('001bM_p', i, '_001gM_p', 1-i, sep='')
-    
+
     ################################################################################################
     # SVs
     ################################################################################################
     ccubeResultRDataFile = paste0(resultFolder, '/', basename, '/ccube_out/ccube_sv_results.RData')
     load(ccubeResultRDataFile)
     svs <- data.frame(data='svs', doubleBreakPtsRes$ssm, mix=mix, p1=i, p2=1-i)
-    
+
     svin <- read.delim(paste0(resultFolder, '/', basename, '/', basename, '_filtered_svs.tsv'))
     svin$sv <- paste(svin$chr1, svin$pos1, svin$dir1, svin$chr2, svin$pos2, svin$dir2, sep=':')
-    svin$mutation_id <- paste(paste(svin$chr1, svin$pos1, svin$dir1, sep=':'), 
+    svin$mutation_id <- paste(paste(svin$chr1, svin$pos1, svin$dir1, sep=':'),
                               paste(svin$chr2, svin$pos2, svin$dir2, sep=':'), sep='_')
     svs <- inner_join(svs, svin, by='mutation_id')
     svs <- attach_001_ground_truth_svs(wd_truth, svs)
-    
+
     pp <- read.delim(paste0(resultFolder, basename, '/purity_ploidy.txt'))
     pur <- pp$purity; pl <- pp$ploidy
     af <- 1 - (pur / pl)
     gains <- svs$classification%in%c('DUP','INTDUP')
-    
+
     svs$norm1_adjusted <- svs$norm1; svs$norm2_adjusted <- svs$norm2;
     svs$norm1_adjusted[gains] <- svs$norm1_adjusted[gains] * af
     svs$norm2_adjusted[gains] <- svs$norm2_adjusted[gains] * af
@@ -100,7 +100,7 @@ for(i in seq(0.1, 0.9, 0.1)) {
     svs[svs$sample%in%'bM_only', 'true_ccf'] <- svs$p1[svs$sample%in%'bM_only']
     svs[svs$sample%in%'gM_only', 'true_ccf'] <- svs$p2[svs$sample%in%'gM_only']
     rownames(svs) <- 1:nrow(svs)
-    
+
     x <- t(data.frame(apply(svs, 1, get_true_sc_cn_by_side, pur=pur, side=1)))
     svs$true_cn1 <- x[,1]
     svs$wtotal_cn1 <- x[,2]
@@ -112,34 +112,34 @@ for(i in seq(0.1, 0.9, 0.1)) {
     svs$wtotal_cn2 <- x[,2]
     svs$pv2 <- x[,3]
     svs$best_ccf2 <- x[,4]
-    
+
     sv_data <- rbind(sv_data, svs)
-    
+
     ################################################################################################
     # SNVs
     ################################################################################################
     ccubeResultRDataFile = paste0(clonal_basedir, basename, '/ccube_out/snvs/', basename, '_ccube_snv_results.RData')
     load(ccubeResultRDataFile)
-    
+
     snvs <- data.frame(data='snvs', snvRes$ssm, sv=snvRes$ssm$mutation_id, mix=mix, p1=i, p2=1-i)
     snvs <- attach_001_ground_truth_snvs(wd_truth, snvs)
-    
+
     snvin <- read.delim(paste0(resultFolder, '/', basename, '/', basename, '_filtered_snvs.tsv'))
     snvin$mutation_id <- paste(snvin$chrom, snvin$pos, sep='_')
     snvs <- inner_join(snvs, snvin[,c('mutation_id', 'gtype')], by='mutation_id')
-    
+
     snvs$true_ccf <- 1
     snvs[snvs$sample%in%'bM_only','true_ccf'] <- i
     snvs[snvs$sample%in%'gM_only','true_ccf'] <- 1-i
-    
+
     snvs$adjusted_support <- snvs$var_counts
     snvs$adjusted_depth <- snvs$var_counts + snvs$ref_counts
-    
+
     snvs$norm_cn <- snvs$normal_cn
     x <- t(data.frame(apply(snvs, 1, get_true_sc_cn)))
     snvs$true_cn <- x[,1]; snvs$wtotal_cn <- x[,2]
     snvs$pv <- x[,3]; snvs$best_ccf <- x[,4]
-    
+
     snv_data <- rbind(snv_data, snvs)
 }
 snv_clonal <- snv_data
@@ -151,19 +151,19 @@ pyc_all <- NULL
 for(p1 in seq(0.1, 0.9, 0.1)) {
     pycloneFolder <- paste0(base_pyc_results, '001bM_p', p1)
     p2 <- 1 - p1; mix <- paste(p1, p2, sep='-')
-    
+
     pp <- read.delim(paste0(resultFolder, '/001bM_p', p1, '_001gM_p', p2, '/purity_ploidy.txt'))
     pyc <- read.delim(file = paste0(pycloneFolder, '/pyclone_results.tsv'), sep = "\t")
     pyc$purity <- pp$purity
-    
+
     sampleTsvFile <- paste0(pycInputFolder, "001bM_p", p1, "_pyclone_input.txt")
     sampleTsv <- read.delim(sampleTsvFile, stringsAsFactors = F)
     sampleTsv <- mutate(sampleTsv, vaf = var_counts/(ref_counts+var_counts))
     allData <- left_join(pyc, sampleTsv, by = "mutation_id")
     rm(sampleTsv)
     allData <- dplyr::filter(allData, !is.na(average_ccf))
-    
-    allData <- dplyr::mutate(allData, 
+
+    allData <- dplyr::mutate(allData,
                     multiplicity = GetMultFromCcf(bn = var_counts,
                                                   dn = var_counts + ref_counts,
                                                   ccf = ccf,
@@ -177,26 +177,26 @@ for(p1 in seq(0.1, 0.9, 0.1)) {
     tmp <- left_join(tmp1, tmp2, by ="Freq")
     colnames(tmp) <- c('cluster_id', 'n_ssms', 'cluster_ccf')
     pyc <- merge(pyc, tmp, by='cluster_id')
-    
+
     pyc$sv <- pyc$mutation_id; pyc$true_ccf <- 1
     pyc <- attach_001_ground_truth_snvs(wd_truth, pyc)
     pyc[pyc$sample%in%'bM_only', 'true_ccf'] <- p1
     pyc[pyc$sample%in%'gM_only', 'true_ccf'] <- p2
-    
+
     pyc$norm_cn <- pyc$normal_cn
     pyc$gtype <- paste(pyc$major_cn, pyc$minor_cn, 1, sep=',')
     pyc$adjusted_support <- pyc$var_counts
     pyc$adjusted_depth <- pyc$var_counts + pyc$ref_counts
-    
+
     x <- t(data.frame(apply(pyc, 1, get_true_sc_cn)))
     pyc$true_cn <- x[,1]
     pyc$wtotal_cn <- x[,2]
     pyc$pv <- x[,3]
     pyc$best_ccf <- x[,4]
-    
+
     pyc$best_guess_subclonal <- pyc$best_ccf < subclonal_cutoff
     pyc$pyc_guess_subclonal <- pyc$ccf < subclonal_cutoff
-    
+
     pyc$mix <- mix
     pyc_all <- rbind(pyc_all, pyc)
 }
@@ -208,18 +208,18 @@ for(nclus in c('4clus', '5clus')) {
     pp <- read.delim(paste0(basedir, nclus, '_out/purity_ploidy.txt'))
     pyc_file <- paste0(pycloneFolder, '/pyclone_results.tsv')
     if(!file.exists(pyc_file)) {
-        proc_pyclone_results(pycloneFolder, pp$purity)    
-    } 
+        proc_pyclone_results(pycloneFolder, pp$purity)
+    }
     pyc <- read.delim(file = pyc_file, sep = "\t")
     pyc$purity <- pp$purity
-    
+
     sampleTsvFile <- paste0(pycInputFolder, nclus, '_pyclone_input.txt')
     sampleTsv <- read.delim(sampleTsvFile, stringsAsFactors = F)
     sampleTsv <- mutate(sampleTsv, vaf = var_counts/(ref_counts+var_counts))
     allData <- left_join(pyc, sampleTsv, by = "mutation_id")
     allData <- dplyr::filter(allData, !is.na(average_ccf))
-    
-    allData <- dplyr::mutate(allData, 
+
+    allData <- dplyr::mutate(allData,
                     multiplicity = GetMultFromCcf(bn = var_counts,
                                                   dn = var_counts + ref_counts,
                                                   ccf = ccf,
@@ -234,32 +234,32 @@ for(nclus in c('4clus', '5clus')) {
     tmp <- left_join(tmp1, tmp2, by ="Freq")
     colnames(tmp) <- c('cluster_id', 'n_ssms', 'cluster_ccf')
     pyc <- merge(pyc, tmp, by='cluster_id')
-    
+
     pyc$sv <- pyc$mutation_id; pyc$true_ccf <- 1
     pyc <- attach_001_ground_truth_snvs(wd_truth, pyc)
 
     if(nclus == '4clus') {
         pyc[pyc$sample%in%'bM_only' & pyc$chr %% 2 == 1, 'true_ccf'] <- 0.2
         pyc[pyc$sample%in%'bM_only' & pyc$chr %% 2 == 0, 'true_ccf'] <- 0.6
-        pyc[pyc$sample%in%'gM_only' & pyc$chr %% 2 == 1, 'true_ccf'] <- 0.4    
+        pyc[pyc$sample%in%'gM_only' & pyc$chr %% 2 == 1, 'true_ccf'] <- 0.4
     } else {
         pyc[pyc$sample%in%'bM_only' & pyc$chr %% 2 == 1, 'true_ccf'] <- 0.8
         pyc[pyc$sample%in%'bM_only' & pyc$chr %% 2 == 0, 'true_ccf'] <- 0.6
         pyc[pyc$sample%in%'gM_only' & pyc$chr %% 2 == 1, 'true_ccf'] <- 0.2
         pyc[pyc$sample%in%'gM_only' & pyc$chr %% 2 == 0, 'true_ccf'] <- 0.4
     }
-    
+
     pyc$norm_cn <- pyc$normal_cn
     pyc$gtype <- paste(pyc$major_cn, pyc$minor_cn, 1, sep=',')
     pyc$adjusted_support <- pyc$var_counts
     pyc$adjusted_depth <- pyc$var_counts + pyc$ref_counts
-    
+
     x <- t(data.frame(apply(pyc, 1, get_true_sc_cn)))
     pyc$true_cn <- x[,1]
     pyc$wtotal_cn <- x[,2]
     pyc$pv <- x[,3]
     pyc$best_ccf <- x[,4]
-    
+
     pyc$best_guess_subclonal <- pyc$best_ccf < subclonal_cutoff
     pyc$pyc_guess_subclonal <- pyc$ccf < subclonal_cutoff
     pyc$chr <- NULL
@@ -275,15 +275,15 @@ bcn <- read.delim('001_truth/001bM_subclones.txt')[,2:14]
 gcn <- read.delim('001_truth/001gM_subclones.txt')[,2:14]
 
 # filter out CN neutral
-bcn <- bcn[!((bcn$frac1 == 1 & bcn$nMaj1_A == 1 & bcn$nMin1_A == 1) | 
+bcn <- bcn[!((bcn$frac1 == 1 & bcn$nMaj1_A == 1 & bcn$nMin1_A == 1) |
            (bcn$chr %in% c('X','Y') &  bcn$frac1 == 1 & bcn$nMaj1_A == 1)), ]
-gcn <- gcn[!((gcn$frac1 == 1 & gcn$nMaj1_A == 1 & gcn$nMin1_A == 1) | 
+gcn <- gcn[!((gcn$frac1 == 1 & gcn$nMaj1_A == 1 & gcn$nMin1_A == 1) |
            (gcn$chr %in% c('X','Y') &  gcn$frac1 == 1 & gcn$nMaj1_A == 1)), ]
 
 boundary <- 5000
-bx <- GRanges(seqnames = bcn$chr, ranges=IRanges(start = bcn$startpos, 
+bx <- GRanges(seqnames = bcn$chr, ranges=IRanges(start = bcn$startpos,
                                                  end = bcn$endpos))
-gx <- GRanges(seqnames = gcn$chr, ranges=IRanges(start = gcn$startpos, 
+gx <- GRanges(seqnames = gcn$chr, ranges=IRanges(start = gcn$startpos,
                                                  end = gcn$endpos))
 
 olaps_both <- findOverlaps(bx, gx, maxgap=boundary, type='equal')
@@ -291,9 +291,9 @@ olaps_starts <- findOverlaps(bx, gx, maxgap=boundary, type='start')
 olaps_ends <- findOverlaps(bx, gx, maxgap=boundary, type='end')
 
 hits <- data.frame(olaps_both)
-match <- ((bcn[hits$queryHits,]$nMaj1_A == gcn[hits$subjectHits,]$nMaj1_A) & 
+match <- ((bcn[hits$queryHits,]$nMaj1_A == gcn[hits$subjectHits,]$nMaj1_A) &
          (bcn[hits$queryHits,]$nMin1_A == gcn[hits$subjectHits,]$nMin1_A)) &
-        ((bcn[hits$queryHits,]$nMaj2_A == gcn[hits$subjectHits,]$nMaj2_A) & 
+        ((bcn[hits$queryHits,]$nMaj2_A == gcn[hits$subjectHits,]$nMaj2_A) &
          (bcn[hits$queryHits,]$nMin2_A == gcn[hits$subjectHits,]$nMin2_A)) |
         (is.na(bcn[hits$queryHits,]$nMaj2_A) == is.na(gcn[hits$subjectHits,]$nMaj2_A))
 match[is.na(match)] <- FALSE
@@ -313,7 +313,7 @@ rownames(p1cn) <- 1:nrow(p1cn)
 p1cn$major <- p1cn$nMaj1_A
 p1cn$minor <- p1cn$nMin1_A
 
-dom_cn <- t(apply(p1cn[grep('only', p1cn$sample),], 1, 
+dom_cn <- t(apply(p1cn[grep('only', p1cn$sample),], 1,
                 function(x){
                     if(x['frac1_A'] > 0.5){
                         return(c(x['nMaj1_A'], x['nMin1_A']))
@@ -332,16 +332,16 @@ all_comps <- NULL
 for(i in seq(0.1, 0.9, 0.1)) {
     basename <- paste('001bM_p', i, '_001gM_p', 1-i, sep='')
     cn <- read.delim(paste0(bb_out, basename, '_subclones.txt'))[,2:14]
-    cn <- cn[!((cn$frac1 == 1 & cn$nMaj1_A == 1 & cn$nMin1_A == 1) | 
+    cn <- cn[!((cn$frac1 == 1 & cn$nMaj1_A == 1 & cn$nMin1_A == 1) |
                (cn$chr %in% c('X','Y') &  cn$frac1 == 1 & cn$nMaj1_A == 1)), ]
     cx <- GRanges(seqnames = cn$chr, ranges = IRanges(start = cn$startpos, end = cn$endpos))
     olaps <- findOverlaps(cx, p1x, maxgap=boundary, type='equal')
     tmp <- cn[queryHits(olaps),]
     tmp$sample <- p1cn[subjectHits(olaps),]$sample
     tmp$subjectHits <- subjectHits(olaps)
-    
+
     tmp1 <- tmp[grep('only',tmp$sample),]
-    fracs <- apply(tmp1, 1, 
+    fracs <- apply(tmp1, 1,
                 function(x){
                     maj <- p1cn[x['subjectHits'],'major']
                     min <- p1cn[x['subjectHits'],'minor']
@@ -367,7 +367,7 @@ res <- all_comps[!is.na(all_comps$ccf),]
 res$ccf <- as.numeric(res$ccf)
 res <- data.table(res)[,mean(true_ccf - ccf), by=c('mix')]
 
-p1 <- ggplot(res, aes(mix, V1, group=1)) + 
+p1 <- ggplot(res, aes(mix, V1, group=1)) +
         geom_point() + geom_line() + ylim(-0.5, 0.5) + theme_bw() + ggtitle('mean_ccf_error')
 
 res <- all_comps[!is.na(all_comps$ccf),]
@@ -394,45 +394,45 @@ for(p1 in seq(0.1, 0.9, 0.1)) {
     mix <- paste(p1, p2, sep='-')
     x <- sv_data[sv_data$mix%in%mix,]
     x$best_ccf <- as.numeric(apply(x[,c('best_ccf1', 'best_ccf2')], 1, mean))
-    opts[[paste0(mix, '_true_sv')]] <- 
-            ggplot(x, aes(true_ccf, fill=as.factor(true_ccf))) + 
+    opts[[paste0(mix, '_true_sv')]] <-
+            ggplot(x, aes(true_ccf, fill=as.factor(true_ccf))) +
                 geom_histogram(colour='grey', alpha=0.6, position='identity', binwidth=0.05) +
                 ylim(0,80) + geom_vline(xintercept=c(1, p1, p2), colour='blue', size=1, alpha=0.2) +
                 scale_x_continuous(breaks = seq(0, 2, 0.5), lim=c(0,2)) + theme_bw() +
-                theme(legend.position = 'none', axis.text = element_text(size = 12)) + 
+                theme(legend.position = 'none', axis.text = element_text(size = 12)) +
                 scale_fill_manual(values = cols) +
                 ylab('') + xlab('')
-    opts[[paste0(mix, '_best_sv')]] <- 
-        ggplot(x, aes(best_ccf, fill=as.factor(true_ccf))) + 
+    opts[[paste0(mix, '_best_sv')]] <-
+        ggplot(x, aes(best_ccf, fill=as.factor(true_ccf))) +
                     geom_histogram(colour='grey', alpha=0.6, position='identity', binwidth=0.05) +
                     ylim(0,20) + geom_vline(xintercept=c(1, p1, p2), colour='blue', size=1, alpha=0.2) +
                     scale_x_continuous(breaks = seq(0, 2, 0.5), lim=c(0,2)) + theme_bw() +
-                    theme(legend.position = 'none', axis.text = element_text(size = 12)) + 
+                    theme(legend.position = 'none', axis.text = element_text(size = 12)) +
                 scale_fill_manual(values = cols) +
                 ylab('') + xlab('')
-    
+
     ccf_err <- mean(x$true_ccf - x$best_ccf)
     mult_err <- mean(c(x$true_cn1 - x$ccube_mult1, x$true_cn2 - x$ccube_mult2))
     ccf_met <- rbind(ccf_met, data.frame(data='SVs', mix, ccf_err))
-    
+
     x <- snv_data[snv_data$mix%in%mix,]
-    opts[[paste0(mix, '_true_snv')]] <- 
-            ggplot(x, aes(true_ccf, fill=as.factor(true_ccf))) + 
+    opts[[paste0(mix, '_true_snv')]] <-
+            ggplot(x, aes(true_ccf, fill=as.factor(true_ccf))) +
                 geom_histogram(colour='grey', alpha=0.6, position='identity', binwidth=0.05) +
                 geom_vline(xintercept=c(1, p1, p2), colour='blue', size=1, alpha=0.2) +
                 scale_x_continuous(breaks = seq(0, 2, 0.5), lim=c(0,2)) + theme_bw() + ylim(0,4000) +
-                theme(legend.position = 'none', axis.text = element_text(size = 12)) + 
+                theme(legend.position = 'none', axis.text = element_text(size = 12)) +
                 scale_fill_manual(values = cols) +
                 ylab('') + xlab('')
-    opts[[paste0(mix, '_best_snv')]] <- 
-        ggplot(x, aes(best_ccf, fill=as.factor(true_ccf))) + 
+    opts[[paste0(mix, '_best_snv')]] <-
+        ggplot(x, aes(best_ccf, fill=as.factor(true_ccf))) +
                     geom_histogram(colour='grey', alpha=0.6, position='identity', binwidth=0.05) +
                     geom_vline(xintercept=c(1, p1, p2), colour='blue', size=1, alpha=0.2) +
                     scale_x_continuous(breaks = seq(0, 2, 0.5), lim=c(0,2)) + theme_bw() + ylim(0,500) +
-                    theme(legend.position = 'none', axis.text = element_text(size = 12)) + 
+                    theme(legend.position = 'none', axis.text = element_text(size = 12)) +
                 scale_fill_manual(values = cols) +
                 ylab('') + xlab('')
-    
+
     ccf_err <- mean(x$true_ccf - x$best_ccf)
     ccf_met <- rbind(ccf_met, data.frame(data='SNVs', mix, ccf_err))
 }
@@ -442,43 +442,43 @@ for(p1 in c('4clus', '5clus')) {
     x <- load_hiclus_svs(p1, basedir)
     x$best_ccf <- as.numeric(apply(x[,c('best_ccf1', 'best_ccf2')], 1, mean))
     clones <- as.numeric(names(table(x$true_ccf)))
-    opts[[paste0(p1, '_true_sv')]] <- 
-            ggplot(x, aes(true_ccf, fill=as.factor(true_ccf))) + 
+    opts[[paste0(p1, '_true_sv')]] <-
+            ggplot(x, aes(true_ccf, fill=as.factor(true_ccf))) +
                     geom_histogram(colour='grey', alpha=0.6, position='identity', binwidth=0.05) +
                     ylim(0,80) + geom_vline(xintercept=clones, colour='blue', size=1, alpha=0.2) +
-                    scale_x_continuous(breaks = seq(0, 2, 0.5), lim=c(0,2)) + theme_bw() + 
-                    theme(legend.position = 'none', axis.text = element_text(size = 12)) + 
+                    scale_x_continuous(breaks = seq(0, 2, 0.5), lim=c(0,2)) + theme_bw() +
+                    theme(legend.position = 'none', axis.text = element_text(size = 12)) +
                 scale_fill_manual(values = cols) +
                 ylab('') + xlab('')
     opts[[paste0(p1, '_best_sv')]] <-
-            ggplot(x, aes(best_ccf, fill=as.factor(true_ccf))) + 
+            ggplot(x, aes(best_ccf, fill=as.factor(true_ccf))) +
                     geom_histogram(colour='grey', alpha=0.6, position='identity', binwidth=0.05) +
                     ylim(0,20) + geom_vline(xintercept=clones, colour='blue', size=1, alpha=0.2) +
                     scale_x_continuous(breaks = seq(0, 2, 0.5), lim=c(0,2)) + theme_bw() +
-                    theme(legend.position = 'none', axis.text = element_text(size = 12)) + 
+                    theme(legend.position = 'none', axis.text = element_text(size = 12)) +
                 scale_fill_manual(values = cols) +
                 ylab('') + xlab('')
-    
+
     ccf_err <- mean(x$true_ccf - x$best_ccf)
     mult_err <- mean(c(x$true_cn1 - x$ccube_mult1, x$true_cn2 - x$ccube_mult2))
     ccf_met <- rbind(ccf_met, data.frame(data='SVs', mix=p1, ccf_err))
-    
+
     x <- load_hiclus_snvs(p1, basedir)
-    opts[[paste0(p1, '_true_snv')]] <- 
-        ggplot(x, aes(true_ccf, fill=as.factor(true_ccf))) + 
+    opts[[paste0(p1, '_true_snv')]] <-
+        ggplot(x, aes(true_ccf, fill=as.factor(true_ccf))) +
             geom_histogram(colour='grey', alpha=0.6, position='identity', binwidth=0.05) +
             geom_vline(xintercept=clones, colour='blue', size=1, alpha=0.2) +
             scale_x_continuous(breaks = seq(0, 2, 0.5), lim=c(0,2)) + theme_bw() + ylim(0,4000) +
             theme(legend.position = 'none', axis.text = element_text(size = 12)) +
             scale_fill_manual(values = cols) +  ylab('') + xlab('')
-    opts[[paste0(p1, '_best_snv')]] <- 
-        ggplot(x, aes(best_ccf, fill=as.factor(true_ccf))) + 
+    opts[[paste0(p1, '_best_snv')]] <-
+        ggplot(x, aes(best_ccf, fill=as.factor(true_ccf))) +
                     geom_histogram(colour='grey', alpha=0.6, position='identity', binwidth=0.05) +
                     geom_vline(xintercept=clones, colour='blue', size=1, alpha=0.2) +
                     scale_x_continuous(breaks = seq(0, 2, 0.5), lim=c(0,2)) + theme_bw() + ylim(0,500) +
-                    theme(legend.position = 'none', axis.text = element_text(size = 12)) + 
+                    theme(legend.position = 'none', axis.text = element_text(size = 12)) +
                     scale_fill_manual(values = cols) +  ylab('') + xlab('')
-   
+
     ccf_err <- mean(x$true_ccf - x$best_ccf)
     ccf_met <- rbind(ccf_met, data.frame(data='SNVs', mix=p1, ccf_err))
 }
@@ -494,21 +494,21 @@ print(data.table(ccf_met)[,mean(ccf_err),by=c('data')])
 
 ## Figure 2c
 
-True minus optimal CCF averages for SNVs (red) and SVs (blue). 
+True minus optimal CCF averages for SNVs (red) and SVs (blue).
 
 ```{r Figure2c, fig.height=5, fig.width=5}
 cm <- melt(ccf_met)
-mixes <- sapply(cm$mix[grep('-',cm$mix)], 
-                function(x){mix <- strsplit(x, '-')[[1]]; 
+mixes <- sapply(cm$mix[grep('-',cm$mix)],
+                function(x){mix <- strsplit(x, '-')[[1]];
                    paste(as.numeric(mix[1])*100, as.numeric(mix[2])*100, sep='-') })
 cm$mix[grep('-',cm$mix)] <- as.character(mixes)
 cm$mix <- factor(cm$mix, levels=c('10-90', '20-80', '30-70', '40-60', '50-50',
                                   '60-40', '70-30', '80-20', '90-10', '4clus', '5clus'))
 
-ggplot(cm, aes(mix, value, group=data, colour=data)) + 
-        geom_line() + geom_point() + theme_bw() + ylim(-0.5, 0.5) + 
+ggplot(cm, aes(mix, value, group=data, colour=data)) +
+        geom_line() + geom_point() + theme_bw() + ylim(-0.5, 0.5) +
         geom_hline(yintercept=0, colour='grey') + ylab('optimal - estimated CCF') + xlab('') +
-        theme(legend.position='bottom', axis.text.x = element_text(size=10), 
+        theme(legend.position='bottom', axis.text.x = element_text(size=10),
               axis.text.y = element_text(size=14), legend.title = element_blank(),
               legend.text = element_text(size=14))
 ```
@@ -541,7 +541,7 @@ rocs[['SV_ccf_max']] <- roc(x$is_subclonal_truth, x$best_ccf_max)
 rocs[['SNV_ccf']] <- roc(y$is_subclonal_truth, y$best_ccf)
 
 tsize = 15
-ggrocs(rocs) + theme(axis.text = element_text(size = tsize), 
+ggrocs(rocs) + theme(axis.text = element_text(size = tsize),
                      legend.text = element_text(size = tsize),
                      axis.title = element_blank(),
                      legend.position = 'none') + geom_step(size=1)
@@ -583,24 +583,24 @@ svc_data <- NULL
 for(i in seq(0.1, 0.9, 0.1)) {
     mix <- paste(i, 1-i, sep='-')
     basename <- paste('001bM_p', i, '_001gM_p', 1-i, sep='')
-    
-    ccubeResultRDataFile = paste0(clonal_basedir, basename, '/ccube_out/', 
+
+    ccubeResultRDataFile = paste0(clonal_basedir, basename, '/ccube_out/',
                                   basename, '_ccube_sv_results.RData')
     load(ccubeResultRDataFile)
     svs <- data.frame(data='svs', doubleBreakPtsRes$ssm, mix=mix, p1=i, p2=1-i)
-    
+
     svin <- read.delim(paste0(clonal_basedir, basename, '/', basename, '_filtered_svs.tsv'))
     svin$sv <- paste(svin$chr1, svin$pos1, svin$dir1, svin$chr2, svin$pos2, svin$dir2, sep=':')
-    svin$mutation_id <- paste(paste(svin$chr1, svin$pos1, svin$dir1, sep=':'), 
+    svin$mutation_id <- paste(paste(svin$chr1, svin$pos1, svin$dir1, sep=':'),
                               paste(svin$chr2, svin$pos2, svin$dir2, sep=':'), sep='_')
     svs <- inner_join(svs, svin, by='mutation_id')
     svs <- attach_001_ground_truth_svs(wd_truth, svs)
-    
+
     pp <- read.delim(paste0(resultFolder, basename, '/purity_ploidy.txt'))
     pur <- pp$purity; pl <- pp$ploidy
     af <- 1 - (pur / pl)
     gains <- svs$classification%in%c('DUP','INTDUP')
-    
+
     svs$norm1_adjusted <- svs$norm1; svs$norm2_adjusted <- svs$norm2;
     svs$norm1_adjusted[gains] <- svs$norm1_adjusted[gains] * af
     svs$norm2_adjusted[gains] <- svs$norm2_adjusted[gains] * af
@@ -612,7 +612,7 @@ for(i in seq(0.1, 0.9, 0.1)) {
     svs[svs$sample%in%'gM_only', 'true_ccf'] <- svs$p2[svs$sample%in%'gM_only']
     svs$ccf_true <- svs$true_ccf
     rownames(svs) <- 1:nrow(svs)
-    
+
     x <- t(data.frame(apply(svs, 1, get_true_sc_cn_by_side, pur=pur, side=1)))
     svs$true_cn1 <- x[,1]
     svs$wtotal_cn1 <- x[,2]
@@ -624,7 +624,7 @@ for(i in seq(0.1, 0.9, 0.1)) {
     svs$wtotal_cn2 <- x[,2]
     svs$pv2 <- x[,3]
     svs$best_ccf2 <- x[,4]
-    
+
     svc_data <- rbind(svc_data, svs)
 }
 
@@ -635,10 +635,10 @@ for(p1 in seq(0.1, 0.9, 0.1)) {
     major <- max(p1, p2)
     mix <- paste(p1, p2, sep='-')
     mixname <- paste(p1*100, p2*100, sep='-')
-    
+
     x <- sv_data[sv_data$mix%in%mix, ]
     metrics <- rbind(metrics, calc_metrics_3clus(x, mix, 'SVs_all_CN'))
-    
+
     x <- svc_data[svc_data$mix%in%mix, ]
     metrics <- rbind(metrics, calc_metrics_3clus(x, mix, 'SVs_clonal_CN'))
 }
@@ -659,34 +659,133 @@ mm[mm$variable%like%'spec',]$variable <- 'is subclonal specificity'
 mm[mm$variable%like%'clus_ccf',]$variable <- 'mean cluster CCF error'
 mm[mm$variable%like%'clus_num',]$variable <- 'cluster number error'
 
-g1 <- ggplot(mm[mm$variable%like%'cluster num',], aes(mix, value, group=method, colour=method)) + 
+g1 <- ggplot(mm[mm$variable%like%'cluster num',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-3, 3) +
         geom_hline(yintercept=0, colour='grey') + ylab('true - estimated cluster number') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=8))
-g2 <- ggplot(mm[mm$variable%like%'cluster CCF',], aes(mix, value, group=method, colour=method)) + 
+g2 <- ggplot(mm[mm$variable%like%'cluster CCF',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) +
         geom_hline(yintercept=0, colour='grey') + ylab('true - estimated cluster CCF') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=8))
-g3 <- ggplot(mm[mm$variable%like%'mean var',], aes(mix, value, group=method, colour=method)) + 
-        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) + 
+g3 <- ggplot(mm[mm$variable%like%'mean var',], aes(mix, value, group=method, colour=method)) +
+        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) +
         geom_hline(yintercept=0, colour='grey') + ylab('true - estimated CCF') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=8))
-g4 <- ggplot(mm[mm$variable%like%'mult',], aes(mix, value, group=method, colour=method)) + 
-        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) + 
+g4 <- ggplot(mm[mm$variable%like%'mult',], aes(mix, value, group=method, colour=method)) +
+        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) +
         geom_hline(yintercept=0, colour='grey') + ylab('optimal - estimated multiplicity') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=8))
-g5 <- ggplot(mm[mm$variable%like%'sens',], aes(mix, value, group=method, colour=method)) + 
-        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(0,1) + 
+g5 <- ggplot(mm[mm$variable%like%'sens',], aes(mix, value, group=method, colour=method)) +
+        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(0,1) +
         ylab('sensitivity') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=8))
-g6 <- ggplot(mm[mm$variable%like%'spec',], aes(mix, value, group=method, colour=method)) + 
-        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(0,1) + 
+g6 <- ggplot(mm[mm$variable%like%'spec',], aes(mix, value, group=method, colour=method)) +
+        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(0,1) +
         ylab('specificity') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=7))
 
-grid.arrange(g1, g3, g5, 
+grid.arrange(g1, g3, g5,
              g2, g4, g6, ncol=3)
 ```
+
+
+```{r calc_se_metrics}
+se_basedir <- '001_svclone_results/001_mixes_single_end/'
+svse_data <- NULL
+for(i in seq(0.1, 0.9, 0.1)) {
+    mix <- paste(i, 1-i, sep='-')
+    basename <- paste('001bM_p', i, '_001gM_p', 1-i, sep='')
+    for(side in c('side1', 'side2')) {
+        ccubeResultRDataFile = paste0(se_basedir, basename,
+                                      paste('/ccube', side, 'out/', sep='_'),
+                                      'ccube_out/snvs/', basename, '_ccube_snv_results.RData')
+        load(ccubeResultRDataFile)
+
+        svs <- data.frame(data='snvs', side=side, snvRes$ssm, sv=snvRes$ssm$mutation_id, mix=mix, p1=i, p2=1-i)
+
+        svin <- read.delim(paste0(resultFolder, basename, '/', basename, '_filtered_svs.tsv'))
+        svin$mutation_id <- paste(svin$chr1, svin$pos1, svin$dir1, svin$chr2, svin$pos2, svin$dir2, sep=':')
+        svs <- inner_join(svs, svin, by='mutation_id')
+        svs$sv <- svs$mutation_id; svs$side <- side
+        svs <- attach_001_ground_truth_svs(wd_truth, svs)
+
+        svs$true_ccf <- 1
+        svs[svs$sample%in%'bM_only','true_ccf'] <- i
+        svs[svs$sample%in%'gM_only','true_ccf'] <- 1-i
+
+        svs$adjusted_support <- svs$var_counts
+        svs$adjusted_depth <- svs$var_counts + svs$ref_counts
+
+        svs$norm_cn <- svs$normal_cn
+        svs$gtype <- ifelse(side == 'side1', svs$gtype1, svs$gtype2)
+        x <- t(data.frame(apply(svs, 1, get_true_sc_cn)))
+        svs$true_cn <- x[,1]; svs$wtotal_cn <- x[,2]
+        svs$pv <- x[,3]; svs$best_ccf <- x[,4]
+
+        svse_data <- rbind(svse_data, svs)
+    }
+}
+
+metrics <- NULL
+for(p1 in seq(0.1, 0.9, 0.1)) {
+    p2 <- 1 - p1
+    minor <- min(p1, p2)
+    major <- max(p1, p2)
+    mix <- paste(p1, p2, sep='-')
+    mixname <- paste(p1*100, p2*100, sep='-')
+
+    x <- sv_data[sv_data$mix%in%mix, ]
+    metrics <- rbind(metrics, calc_metrics_3clus(x, mix, 'SVs_all_CN'))
+
+    x <- svse_data[svse_data$mix%in%mix & svse_data$side%in%'side1', ]
+    metrics <- rbind(metrics, calc_metrics_3clus(x, mix, 'SVs_single_end1', type='snv'))
+
+    x <- svse_data[svse_data$mix%in%mix & svse_data$side%in%'side2', ]
+    metrics <- rbind(metrics, calc_metrics_3clus(x, mix, 'SVs_single_end2', type='snv'))
+}
+```
+
+
+```{r plot_se_metrics}
+mm <- melt(metrics)
+mm$variable <- as.character(mm$variable)
+mm$mix <- sapply(mm$mix, function(x){tmp <- as.numeric(strsplit(x, '-')[[1]]); paste(tmp[1]*100, tmp[2]*100, sep='-')})
+mm[mm$variable%like%'mean_mult_error',]$variable <- 'mean multiplicity error'
+mm[mm$variable%like%'mean_ccf',]$variable <- 'mean variant CCF error'
+mm[mm$variable%like%'sens',]$variable <- 'is subclonal sensitivity'
+mm[mm$variable%like%'spec',]$variable <- 'is subclonal specificity'
+mm[mm$variable%like%'clus_ccf',]$variable <- 'mean cluster CCF error'
+mm[mm$variable%like%'clus_num',]$variable <- 'cluster number error'
+
+g1 <- ggplot(mm[mm$variable%like%'cluster num',], aes(mix, value, group=method, colour=method)) +
+        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-3, 3) +
+        geom_hline(yintercept=0, colour='grey') + ylab('true - estimated cluster number') + xlab('') +
+        theme(legend.position='bottom', axis.text.x = element_text(size=8))
+g2 <- ggplot(mm[mm$variable%like%'cluster CCF',], aes(mix, value, group=method, colour=method)) +
+        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.6, 0.6) +
+        geom_hline(yintercept=0, colour='grey') + ylab('true - estimated cluster CCF') + xlab('') +
+        theme(legend.position='bottom', axis.text.x = element_text(size=8))
+g3 <- ggplot(mm[mm$variable%like%'mean var',], aes(mix, value, group=method, colour=method)) +
+        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.6, 0.6) +
+        geom_hline(yintercept=0, colour='grey') + ylab('true - estimated CCF') + xlab('') +
+        theme(legend.position='bottom', axis.text.x = element_text(size=8))
+g4 <- ggplot(mm[mm$variable%like%'mult',], aes(mix, value, group=method, colour=method)) +
+        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.6, 0.6) +
+        geom_hline(yintercept=0, colour='grey') + ylab('optimal - estimated multiplicity') + xlab('') +
+        theme(legend.position='bottom', axis.text.x = element_text(size=8))
+g5 <- ggplot(mm[mm$variable%like%'sens',], aes(mix, value, group=method, colour=method)) +
+        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(0,1) +
+        ylab('sensitivity') + xlab('') +
+        theme(legend.position='bottom', axis.text.x = element_text(size=8))
+g6 <- ggplot(mm[mm$variable%like%'spec',], aes(mix, value, group=method, colour=method)) +
+        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(0,1) +
+        ylab('specificity') + xlab('') +
+        theme(legend.position='bottom', axis.text.x = element_text(size=7))
+
+grid.arrange(g1, g3, g5,
+             g2, g4, g6, ncol=3)
+```
+
 
 
 ```{r calc_all_metrics}
@@ -696,16 +795,16 @@ for(p1 in seq(0.1,0.9,0.1)) {
     minor <- min(p1, p2)
     major <- max(p1, p2)
     mix <- paste(p1, p2, sep='-')
-    
+
     x <- sv_data[sv_data$mix%in%mix, ]
     metrics <- rbind(metrics, calc_metrics_3clus(x, mix, 'ccube_SV', type='sv'))
 
     x <- pyc_all[pyc_all$mix%in%mix, ]
     metrics <- rbind(metrics, calc_metrics_3clus(x, mix, 'pyclone', type='pyc'))
-    
+
     x <- snv_data[snv_data$mix%in%mix, ]
     metrics <- rbind(metrics, calc_metrics_3clus(x, mix, 'ccube_SNV', type='snv'))
-    
+
     x <- cna_data[cna_data$mix%in%mix,]
     mean_ccf_error <- mean(as.numeric(x$ccf) - x$true_ccf, na.rm=T)
     is_subclonal_truth <- x$true_ccf < 1
@@ -719,20 +818,20 @@ for(p1 in seq(0.1,0.9,0.1)) {
 
 for(i in c('4clus', '5clus')) {
     if(i == '4clus') {
-        cn <- read.delim(paste0(bb_out, '4clus_subclones.txt'))[,1:13]    
+        cn <- read.delim(paste0(bb_out, '4clus_subclones.txt'))[,1:13]
     } else {
-        cn <- read.delim(paste0(bb_out, '5clus_subclones.txt'))[,1:13]    
+        cn <- read.delim(paste0(bb_out, '5clus_subclones.txt'))[,1:13]
     }
-    cn <- cn[!((cn$frac1 == 1 & cn$nMaj1_A == 1 & cn$nMin1_A == 1) | 
+    cn <- cn[!((cn$frac1 == 1 & cn$nMaj1_A == 1 & cn$nMin1_A == 1) |
                (cn$chr %in% c('X','Y') &  cn$frac1 == 1 & cn$nMaj1_A == 1)), ]
     cx <- GRanges(seqnames = cn$chr, ranges = IRanges(start = cn$startpos, end = cn$endpos))
     olaps <- findOverlaps(cx, p1x, maxgap=boundary, type='equal')
     tmp <- cn[queryHits(olaps),]
     tmp$sample <- p1cn[subjectHits(olaps),]$sample
     tmp$subjectHits <- subjectHits(olaps)
-    
+
     tmp1 <- tmp[grep('only',tmp$sample),]
-    fracs <- apply(tmp1, 1, 
+    fracs <- apply(tmp1, 1,
                 function(x){
                     maj <- p1cn[x['subjectHits'],'major']
                     min <- p1cn[x['subjectHits'],'minor']
@@ -750,7 +849,7 @@ for(i in c('4clus', '5clus')) {
     if(i == '4clus') {
         tmp[tmp$sample%in%'bM_only' & tmp$chr %% 2 == 1, 'true_ccf'] <- 0.2
         tmp[tmp$sample%in%'bM_only' & tmp$chr %% 2 == 0, 'true_ccf'] <- 0.6
-        tmp[tmp$sample%in%'gM_only' & tmp$chr %% 2 == 1, 'true_ccf'] <- 0.4    
+        tmp[tmp$sample%in%'gM_only' & tmp$chr %% 2 == 1, 'true_ccf'] <- 0.4
     } else {
         tmp[tmp$sample%in%'bM_only' & tmp$chr %% 2 == 1, 'true_ccf'] <- 0.8
         tmp[tmp$sample%in%'bM_only' & tmp$chr %% 2 == 0, 'true_ccf'] <- 0.6
@@ -760,7 +859,7 @@ for(i in c('4clus', '5clus')) {
     tmp$ccf <- tmp$frac1_A
     tmp[grep('only',tmp$sample), 'ccf'] <- fracs
     x <- tmp[!is.na(tmp$ccf),]
-    
+
     mean_ccf_error <- mean(as.numeric(x$ccf) - x$true_ccf, na.rm=T)
     is_subclonal_truth <- x$true_ccf < 1
     is_subclonal_bb <- x$ccf < cutoff_cna
@@ -806,8 +905,8 @@ mm[mm$variable%like%'spec',]$variable <- 'is subclonal specificity'
 mm[mm$variable%like%'clus_ccf',]$variable <- 'mean cluster CCF error'
 mm[mm$variable%like%'clus_num',]$variable <- 'cluster number error'
 
-mixes <- sapply(mm$mix[grep('-',mm$mix)], 
-                function(x){mix <- strsplit(x, '-')[[1]]; 
+mixes <- sapply(mm$mix[grep('-',mm$mix)],
+                function(x){mix <- strsplit(x, '-')[[1]];
                    paste(as.numeric(mix[1])*100, as.numeric(mix[2])*100, sep='-') })
 mm$mix[grep('-',mm$mix)] <- as.character(mixes)
 mm$mix <- factor(mm$mix, levels=c('10-90', '20-80', '30-70', '40-60', '50-50',
@@ -816,41 +915,41 @@ mm$mix <- factor(mm$mix, levels=c('10-90', '20-80', '30-70', '40-60', '50-50',
 # remove pyclone as technically it doesn't estimate mult
 mm <- mm[!(mm$method%in%'pyclone' & mm$variable%in%'mean multiplicity error'),]
 
-cols <- brewer.pal(4, 'Set1') 
+cols <- brewer.pal(4, 'Set1')
 names(cols) <- unique(mm$method)
 
-g1 <- ggplot(mm[mm$variable%like%'cluster num',], aes(mix, value, group=method, colour=method)) + 
+g1 <- ggplot(mm[mm$variable%like%'cluster num',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-3, 3) +
         geom_hline(yintercept=0, colour='grey') + ylab('true - estimated cluster number') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=7)) +
         scale_colour_manual(values = cols)
-g2 <- ggplot(mm[mm$variable%like%'cluster CCF',], aes(mix, value, group=method, colour=method)) + 
+g2 <- ggplot(mm[mm$variable%like%'cluster CCF',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) +
         geom_hline(yintercept=0, colour='grey') + ylab('true - estimated cluster CCF') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=7)) +
         scale_colour_manual(values = cols)
-g3 <- ggplot(mm[mm$variable%like%'mean var',], aes(mix, value, group=method, colour=method)) + 
-        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) + 
+g3 <- ggplot(mm[mm$variable%like%'mean var',], aes(mix, value, group=method, colour=method)) +
+        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) +
         geom_hline(yintercept=0, colour='grey') + ylab('true - estimated CCF') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=7)) +
         scale_colour_manual(values = cols)
-g4 <- ggplot(mm[mm$variable%like%'mult',], aes(mix, value, group=method, colour=method)) + 
-        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) + 
+g4 <- ggplot(mm[mm$variable%like%'mult',], aes(mix, value, group=method, colour=method)) +
+        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) +
         geom_hline(yintercept=0, colour='grey') + ylab('optimal - estimated multiplicity') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=7)) +
         scale_colour_manual(values = cols)
-g5 <- ggplot(mm[mm$variable%like%'sens',], aes(mix, value, group=method, colour=method)) + 
-        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(0,1) + 
+g5 <- ggplot(mm[mm$variable%like%'sens',], aes(mix, value, group=method, colour=method)) +
+        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(0,1) +
         ylab('sensitivity') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=7)) +
         scale_colour_manual(values = cols)
-g6 <- ggplot(mm[mm$variable%like%'spec',], aes(mix, value, group=method, colour=method)) + 
-        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(0,1) + 
+g6 <- ggplot(mm[mm$variable%like%'spec',], aes(mix, value, group=method, colour=method)) +
+        geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(0,1) +
         ylab('specificity') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=7)) +
         scale_colour_manual(values = cols)
 
-grid.arrange(g1, g3, g5, 
+grid.arrange(g1, g3, g5,
              g2, g4, g6, ncol=3)
 ```
 
@@ -865,10 +964,10 @@ for(p1 in seq(0.1,0.9,0.1)) {
     mix <- paste(p1, p2, sep='-')
     svs <- sv_data[sv_data$mix%in%mix, ]
     metrics <- rbind(metrics, calc_metrics_3clus(svs, mix, 'SVs', type = 'sv'))
-    
+
     snvs <- snv_data[snv_data$mix%in%mix, ]
-    metrics <- rbind(metrics, calc_metrics_3clus(snvs, mix, 'SNVs', type = 'snv'))    
-    
+    metrics <- rbind(metrics, calc_metrics_3clus(snvs, mix, 'SNVs', type = 'snv'))
+
     snvs <- pyc_all[pyc_all$mix%in%mix, ]
     metrics <- rbind(metrics, calc_metrics_3clus(snvs, mix, 'PyClone', type = 'pyc'))
 }
@@ -876,39 +975,39 @@ for(p1 in seq(0.1,0.9,0.1)) {
 for(i in seq(0.1, 0.9, 0.1)) {
     mix <- paste(i, 1-i, sep='-')
     basename <- paste('001bM_p', i, '_001gM_p', 1-i, sep='')
-    
+
     sv_filt_file <- paste0(resultFolder, '/', basename, '/', basename, '_filtered_svs.tsv')
     pp_file <- paste0(resultFolder, '/', basename, '/purity_ploidy.txt')
-    
+
     ccubeResultSVRDataFile = paste0(resultFolder, '/', basename, '/ccube_out/ccube_sv_results.RData')
     load(ccubeResultSVRDataFile)
 
     mix_name <- paste(i * 100, (1-i) * 100, sep='-')
     ccubeResultSNVRDataFile = paste0(clonal_basedir, basename, '/ccube_out/snvs/', basename, '_ccube_snv_results.RData')
     load(ccubeResultSNVRDataFile)
-    
+
     referenceRes <- snvRes$res
     mydata <- doubleBreakPtsRes$ssm
-    
+
     postAssignRes <- RunPostAssignPipeline(snvRes = referenceRes, svRes = doubleBreakPtsRes$res, mydata = mydata, verbose = F)
     svs <- get_all_sv_meta_3clus(postAssignRes$ssm, i, resultFolder, wd_truth)
-    
+
     ssm <- snvRes$ssm
     postAssignRes <- RunPostAssignPipeline(svRes = postAssignRes$res, mydata = ssm, verbose = F)
-    
+
     # combine SVs and SNVs
     snvs <- get_all_snv_meta_3clus(ssm = postAssignRes$ssm, i, resultFolder, wd_truth)
-    
+
     sv_ccf <- apply(svs[,c('ccube_ccf1', 'ccube_ccf2')], 1, mean)
     ccube_mult <- apply(svs[,c('ccube_mult1', 'ccube_mult2')], 1, mean)
     true_cn <- apply(svs[,c('true_cn1', 'true_cn2')], 1, mean)
-    svd <- data.frame(ccube_ccf=sv_ccf, ccube_mult=ccube_mult, 
-                      true_cn=true_cn, true_ccf=svs$true_ccf, 
+    svd <- data.frame(ccube_ccf=sv_ccf, ccube_mult=ccube_mult,
+                      true_cn=true_cn, true_ccf=svs$true_ccf,
                       ccube_ccf_mean=svs$ccube_ccf_mean)
-    snd <- data.frame(ccube_ccf=snvs$ccube_ccf, ccube_mult=snvs$ccube_mult, 
-                      true_cn=snvs$true_cn, true_ccf=snvs$true_ccf, 
+    snd <- data.frame(ccube_ccf=snvs$ccube_ccf, ccube_mult=snvs$ccube_mult,
+                      true_cn=snvs$true_cn, true_ccf=snvs$true_ccf,
                       ccube_ccf_mean=snvs$ccube_ccf_mean)
-    both <- rbind(svd, snd)    
+    both <- rbind(svd, snd)
     metrics <- rbind(metrics, calc_metrics_3clus(both, mix, 'SV + SNV post-assigned', type='snv'))
 }
 
@@ -928,38 +1027,38 @@ mm <- mm[!(mm$method%in%'PyClone' & mm$variable%in%'mean multiplicity error'),]
 cols <- c("#E41A1C", "#377EB8", "#ff7f00", "#984EA3")
 names(cols) <- unique(mm$method)
 
-g1 <- ggplot(mm[mm$variable%like%'cluster num',], aes(mix, value, group=method, colour=method)) + 
+g1 <- ggplot(mm[mm$variable%like%'cluster num',], aes(mix, value, group=method, colour=method)) +
         geom_line(alpha=0.7) + geom_point(alpha=0.7) + facet_grid(~variable) + theme_bw() + ylim(-3, 3) +
         geom_hline(yintercept=0, colour='grey') + ylab('true - estimated cluster number') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
         scale_colour_manual(values = cols)
-g2 <- ggplot(mm[mm$variable%like%'cluster CCF',], aes(mix, value, group=method, colour=method)) + 
+g2 <- ggplot(mm[mm$variable%like%'cluster CCF',], aes(mix, value, group=method, colour=method)) +
         geom_line(alpha=0.7) + geom_point(alpha=0.7) + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) +
         geom_hline(yintercept=0, colour='grey') + ylab('true - estimated cluster CCF') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
         scale_colour_manual(values = cols)
-g3 <- ggplot(mm[mm$variable%like%'mean var',], aes(mix, value, group=method, colour=method)) + 
-        geom_line(alpha=0.7) + geom_point(alpha=0.7) + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) + 
+g3 <- ggplot(mm[mm$variable%like%'mean var',], aes(mix, value, group=method, colour=method)) +
+        geom_line(alpha=0.7) + geom_point(alpha=0.7) + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) +
         geom_hline(yintercept=0, colour='grey') + ylab('true - estimated CCF') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
         scale_colour_manual(values = cols)
-g4 <- ggplot(mm[mm$variable%like%'mult',], aes(mix, value, group=method, colour=method)) + 
-        geom_line(alpha=0.7) + geom_point(alpha=0.7) + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) + 
+g4 <- ggplot(mm[mm$variable%like%'mult',], aes(mix, value, group=method, colour=method)) +
+        geom_line(alpha=0.7) + geom_point(alpha=0.7) + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) +
         geom_hline(yintercept=0, colour='grey') + ylab('optimal - estimated multiplicity') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
         scale_colour_manual(values = cols)
-g5 <- ggplot(mm[mm$variable%like%'sens',], aes(mix, value, group=method, colour=method)) + 
-        geom_line(alpha=0.7) + geom_point(alpha=0.7) + facet_grid(~variable) + theme_bw() + ylim(0,1) + 
+g5 <- ggplot(mm[mm$variable%like%'sens',], aes(mix, value, group=method, colour=method)) +
+        geom_line(alpha=0.7) + geom_point(alpha=0.7) + facet_grid(~variable) + theme_bw() + ylim(0,1) +
         ylab('sensitivity') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
         scale_colour_manual(values = cols)
-g6 <- ggplot(mm[mm$variable%like%'spec',], aes(mix, value, group=method, colour=method)) + 
-        geom_line(alpha=0.7) + geom_point(alpha=0.7) + facet_grid(~variable) + theme_bw() + ylim(0,1) + 
+g6 <- ggplot(mm[mm$variable%like%'spec',], aes(mix, value, group=method, colour=method)) +
+        geom_line(alpha=0.7) + geom_point(alpha=0.7) + facet_grid(~variable) + theme_bw() + ylim(0,1) +
         ylab('specificity') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=7)) +
         scale_colour_manual(values = cols)
 
-grid.arrange(g1, g3, g5, 
+grid.arrange(g1, g3, g5,
              g2, g4, g6, ncol=3)
 ```
 
@@ -978,7 +1077,7 @@ for(i in seq(0.1, 0.9, 0.1)) {
 
 tsize=20
 ggplot(precisions, aes(iter, trace, group=mix, colour=mix)) +
-    geom_line() + theme_bw() + xlab('iteration') + ylab('PyClone precision trace') + 
+    geom_line() + theme_bw() + xlab('iteration') + ylab('PyClone precision trace') +
     theme(axis.text = element_text(size=tsize),
           axis.title = element_text(size=tsize),
           legend.text = element_text(size=tsize),
