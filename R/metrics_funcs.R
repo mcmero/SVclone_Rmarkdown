@@ -82,7 +82,7 @@ attach_001_ground_truth_snvs <- function(snv_wd, ccfs) {
 }
 
 #TODO: merge with calc_metrics_3clus
-calc_metrics_hiclus <- function(x, mix, nclus=c(4,5), type=c('svs','snvs','pyc'), truth=c('best', 'ground')) {
+calc_metrics_hiclus <- function(x, mix, nclus=c(4,5), type='sv', truth='best') {
     method <- NA
     if(type == 'svs') {
         mean_mult_error <- mean(c(x$true_cn1-x$ccube_mult1, x$true_cn2-x$ccube_mult2))
@@ -125,7 +125,7 @@ calc_metrics_hiclus <- function(x, mix, nclus=c(4,5), type=c('svs','snvs','pyc')
     return(met)
 }
 
-calc_metrics_3clus <- function(x, mix, method, type=c('sv','snv','pyc')) {
+calc_metrics_3clus <- function(x, mix, method, type='sv') {
     tmp <- as.numeric(strsplit(mix, '-')[[1]])
     tmp <- tmp[order(tmp, decreasing = T)]
     major <- tmp[1]; minor <- tmp[2]
@@ -145,7 +145,7 @@ calc_metrics_3clus <- function(x, mix, method, type=c('sv','snv','pyc')) {
         clus_num_error <- 3 - length(unique(x$ccube_ccf_mean))
         clus_ccf_error <- get_clus_ccf_error(x$ccube_ccf_mean, c(1, major, minor))
         is_subclonal_truth <- x$true_ccf < 1
-        is_subclonal <- apply(x[,c('ccube_ccf1', 'ccube_ccf2')], 1, max) < cutoff_svs
+        is_subclonal <- apply(x[,c('ccube_ccf1', 'ccube_ccf2')], 1, mean) < cutoff_svs
     } else if (type=='snv') {
         mean_mult_error <- mean(x$true_cn - x$ccube_mult)
         mean_ccf_error <- mean(x$true_ccf - x$ccube_ccf)

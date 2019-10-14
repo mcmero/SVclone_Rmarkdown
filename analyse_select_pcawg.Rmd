@@ -188,7 +188,6 @@ print('Proportion called using SNV data:')
 sum(ncc_snv)/length(ncc_snv)
 ```
 
-
 ```{r summarise_results}
 sv_summary <- NULL
 for (sample in pcawg_summary$sample) {
@@ -216,7 +215,7 @@ for (sample in pcawg_summary$sample) {
 }
 ```
 
-## Figure 5a
+## Figure 6a
 
 PCAWG SV versus SNV subclonal fractions. Lines repesent density.
 
@@ -261,11 +260,41 @@ ggplot(svsf, aes(snv_sc_frac, sv_sc_frac, colour=histology_abbreviation)) + geom
           panel.spacing = unit(1, 'lines'))
 ```
 
-## Supplementary Table 3
+```{r pcawg_cn_heterogeneity}
+pcawg_cn_het <- NULL
+for (sample in unique(svsf$sample)) {
+    svf_file <- paste(sv_filt_dir, sample, '/', sample, '_filtered_svs.tsv', sep='')
+    if(file.exists(svf_file)) {
+        svf <- read.delim(svf_file, sep='\t')
+        hist <- pcawg_summary$histology_abbreviation[pcawg_summary$sample==sample]
+        hetCN <- sum(svf$gtype1 != svf$gtype2, na.rm=TRUE) / nrow(svf)
+        pcawg_cn_het <- rbind(pcawg_cn_het, 
+                              data.frame(sample=sample, histology=hist,
+                                         nsvs=nrow(svf),
+                                         heterogenousCN=hetCN))
+    }
+}
+pcawg_cn_het <- pcawg_cn_het[pcawg_cn_het$nsvs > 10,]
+pcawg_cn_het <- pcawg_cn_het[pcawg_cn_het$histology%in%svsf$histology_detailed,]
+
+ranks <- data.table(pcawg_cn_het)[, median(heterogenousCN), by=c('histology')]
+ranks <- ranks[order(rank(V1))]
+pcawg_cn_het$histology <- factor(pcawg_cn_het$histology, levels=ranks$histology)
+
+ggplot(pcawg_cn_het, aes(histology, heterogenousCN)) + geom_boxplot() + 
+    geom_jitter(width=0.1, alpha=1, size=0.2) + theme_bw() + theme(axis.text.x=element_text(angle=90))
+
+ggplot(pcawg_cn_het, aes(nsvs, heterogenousCN)) + geom_point(size=0.5) + 
+    theme_bw() +  
+    facet_wrap(~histology)
+```
+
+
+## Supplementary Table 4
 
 PCAWG SV versus SNV statistics per histological group.
 
-```{r SuppTable3}
+```{r SuppTable4}
 s20_or_over <- unique(svsf$histology_detailed)
 sv_sc_by_type <- NULL
 for (type in s20_or_over) {
@@ -300,7 +329,7 @@ for (sample in pcawg_summary_clinical_filt$sample) {
     snv_cc <- paste(snv_dir, sample, '/ccube_out/snvs/', sample, '_cluster_certainty.txt', sep='')
     sv_ss <- paste(sv_dir, sample, '/ccube_out/', sample, '_subclonal_structure.txt', sep='')
     snv_ss <- paste(snv_dir, sample, '/ccube_out/snvs/', sample, '_subclonal_structure.txt', sep='')
-    svf <- paste(sv_filt_dir, sample, '_filtered_svs.tsv', sep='')
+    svf <- paste(sv_filt_dir, sample, '/', sample, '_filtered_svs.tsv', sep='')
     sv_ccert <- paste(sv_dir, sample, '/ccube_out/', sample, '_cluster_certainty.txt', sep='')
     pur <- pcawg_pp[pcawg_pp$samplename%in%sample,'purity']
     pl <- pcawg_pp[pcawg_pp$samplename%in%sample,'ploidy']
@@ -407,7 +436,7 @@ km.by.group <- survfit(SurvObj ~ classification, data = surv, conf.type = 'log-l
 print(km.by.group)
 ```
 
-## Figure 5b
+## Figure 6b
 
 Survival curve comparing SCNR, high-SV heterogeneity and all other PCAWG samples.
 
@@ -495,7 +524,7 @@ ggplot(fbi_svinfo,aes(x=classification,y=amp_FBI)) +
     geom_jitter(width=0.2, alpha=0.4, size=0.6)
 ```
 
-## Figure 5c-f
+## Figure 6c-f
 
 Plots for representative SCNR PCWAG sample bef21282.
 
