@@ -543,8 +543,7 @@ rocs[['SNV_ccf']] <- roc(y$is_subclonal_truth, y$best_ccf)
 tsize = 15
 ggrocs(rocs) + theme(axis.text = element_text(size = tsize),
                      legend.text = element_text(size = tsize),
-                     axis.title = element_blank(),
-                     legend.position = 'none') + geom_step(size=1)
+                     axis.title = element_blank()) + geom_step(size=1)
 ```
 
 Respective AUCs

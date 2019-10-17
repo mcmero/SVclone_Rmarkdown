@@ -156,6 +156,8 @@ calc_metrics_3clus <- function(x, mix, method, type='sv') {
     }
     is_subclonal_sensitivity <- sum(is_subclonal_truth & is_subclonal) / sum(is_subclonal_truth)
     is_subclonal_specificity <- 1 - sum(!is_subclonal_truth & is_subclonal) / nrow(x)
+    # precision <- sum(is_subclonal_truth & is_subclonal) / length(is_subclonal_truth)
+    # f1_score <- 2 * ((precision * is_subclonal_sensitivity)/(precision + is_subclonal_sensitivity))
     return(data.frame(mix, mean_mult_error, mean_ccf_error, clus_num_error,
                       is_subclonal_sensitivity, is_subclonal_specificity,
                       clus_ccf_error, method=method))

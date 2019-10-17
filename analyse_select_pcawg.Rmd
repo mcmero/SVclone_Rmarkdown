@@ -195,7 +195,8 @@ for (sample in pcawg_summary$sample) {
 
     sv_cc <- paste(sv_dir, sample, '/ccube_out/', sample, '_cluster_certainty.txt', sep='')
     snv_cc <- paste(snv_dir, sample, '/ccube_out/snvs/', sample, '_cluster_certainty.txt', sep='')
-
+    svf_file <- paste(sv_filt_dir, sample, '/', sample, '_filtered_svs.tsv', sep='')
+    
     if(!file.exists(sv_cc)) {next}
     svcc <- read.delim(sv_cc, sep='\t')
     svcc$mean_ccf <- as.numeric(apply(svcc[,c('average_proportion1', 'average_proportion2')] / pur,
@@ -204,13 +205,19 @@ for (sample in pcawg_summary$sample) {
     if(!file.exists(snv_cc)) {next}
     snvcc <- read.delim(snv_cc, sep='\t')
     snvcc$ccf <- snvcc$average_proportion / pur
+    
+    
+    if(!file.exists(svf_file)) {next}
+    svf <- read.delim(svf_file, sep='\t')
 
     sv_sc_frac <- sum(svcc$mean_ccf < subclonal_cutoff) / nrow(svcc)
     snv_sc_frac <- sum(snvcc$ccf < subclonal_cutoff) / nrow(snvcc)
-
+    het_cn_frac <- sum(svf$gtype1 != svf$gtype2, na.rm=TRUE) / nrow(svf)
+    
     type <- strsplit(pcawg_summary[pcawg_summary$sample==sample, 'projectcode'],'-')[[1]][1]
     sv_table <- data.frame(sample=sample, nsv=nrow(svcc), nsnv=nrow(snvcc),
-                           sv_sc_frac=sv_sc_frac, snv_sc_frac=snv_sc_frac, type=type)
+                           sv_sc_frac=sv_sc_frac, snv_sc_frac=snv_sc_frac,
+                           het_cn_frac, type=type)
     sv_summary <- rbind(sv_summary, sv_table)
 }
 ```
@@ -260,36 +267,6 @@ ggplot(svsf, aes(snv_sc_frac, sv_sc_frac, colour=histology_abbreviation)) + geom
           panel.spacing = unit(1, 'lines'))
 ```
 
-```{r pcawg_cn_heterogeneity}
-pcawg_cn_het <- NULL
-for (sample in unique(svsf$sample)) {
-    svf_file <- paste(sv_filt_dir, sample, '/', sample, '_filtered_svs.tsv', sep='')
-    if(file.exists(svf_file)) {
-        svf <- read.delim(svf_file, sep='\t')
-        hist <- pcawg_summary$histology_abbreviation[pcawg_summary$sample==sample]
-        hetCN <- sum(svf$gtype1 != svf$gtype2, na.rm=TRUE) / nrow(svf)
-        pcawg_cn_het <- rbind(pcawg_cn_het, 
-                              data.frame(sample=sample, histology=hist,
-                                         nsvs=nrow(svf),
-                                         heterogenousCN=hetCN))
-    }
-}
-pcawg_cn_het <- pcawg_cn_het[pcawg_cn_het$nsvs > 10,]
-pcawg_cn_het <- pcawg_cn_het[pcawg_cn_het$histology%in%svsf$histology_detailed,]
-
-ranks <- data.table(pcawg_cn_het)[, median(heterogenousCN), by=c('histology')]
-ranks <- ranks[order(rank(V1))]
-pcawg_cn_het$histology <- factor(pcawg_cn_het$histology, levels=ranks$histology)
-
-ggplot(pcawg_cn_het, aes(histology, heterogenousCN)) + geom_boxplot() + 
-    geom_jitter(width=0.1, alpha=1, size=0.2) + theme_bw() + theme(axis.text.x=element_text(angle=90))
-
-ggplot(pcawg_cn_het, aes(nsvs, heterogenousCN)) + geom_point(size=0.5) + 
-    theme_bw() +  
-    facet_wrap(~histology)
-```
-
-
 ## Supplementary Table 4
 
 PCAWG SV versus SNV statistics per histological group.
@@ -305,6 +282,7 @@ for (type in s20_or_over) {
     type_row <- data.frame(histology=type, n_samples=n_samples,
                            subclonal_sv_enriched_samples=subc_sv_samples,
                            prop_greater_subclonal_svs=round(pgss,2),
+                           median_cn_heterogeneity=round(median(svc_type$het_cn_frac),2),
                            mean_svs=round(mean(svc_type$nsv)), mean_snvs=round(mean(svc_type$nsnv)))
     sv_sc_by_type <- rbind(sv_sc_by_type, type_row)
                            
@@ -313,9 +291,10 @@ sv_sc_by_type <- sv_sc_by_type[order(sv_sc_by_type$prop_greater_subclonal_svs, d
 sv_sc_by_type <- rbind(sv_sc_by_type, data.frame(histology='total or mean', 
                                                  n_samples=sum(sv_sc_by_type$n_samples),
                                                  subclonal_sv_enriched_samples=sum(sv_sc_by_type$subclonal_sv_enriched_samples),
-                                                 prop_greater_subclonal_svs=mean(sv_sc_by_type$prop_greater_subclonal_svs),
-                                                 mean_svs=mean(sv_sc_by_type$mean_svs),
-                                                 mean_snvs=mean(sv_sc_by_type$mean_snvs)))
+                                                 prop_greater_subclonal_svs=round(sum(svsf$sv_sc_frac>svsf$snv_sc_frac)/nrow(svsf),2),
+                                                 median_cn_heterogeneity=round(median(svsf$het_cn_frac),2),
+                                                 mean_svs=round(mean(svsf$nsv)),
+                                                 mean_snvs=round(mean(svsf$nsnv))))
 print(sv_sc_by_type)
 ```
 
