@@ -292,9 +292,16 @@ sv_sc_by_type <- rbind(sv_sc_by_type, data.frame(histology='total or mean',
                                                  n_samples=sum(sv_sc_by_type$n_samples),
                                                  subclonal_sv_enriched_samples=sum(sv_sc_by_type$subclonal_sv_enriched_samples),
                                                  prop_greater_subclonal_svs=round(sum(svsf$sv_sc_frac>svsf$snv_sc_frac)/nrow(svsf),2),
-                                                 median_cn_heterogeneity=round(median(svsf$het_cn_frac),2),
+                                                 median_cn_heterogeneity=round(mean(svsf$het_cn_frac),2),
                                                  mean_svs=round(mean(svsf$nsv)),
                                                  mean_snvs=round(mean(svsf$nsnv))))
+sv_sc_by_type <- rbind(sv_sc_by_type, data.frame(histology='median', 
+                                                 n_samples=NA,
+                                                 subclonal_sv_enriched_samples=NA,
+                                                 prop_greater_subclonal_svs=NA,
+                                                 median_cn_heterogeneity=round(median(svsf$het_cn_frac),2),
+                                                 mean_svs=round(median(svsf$nsv)),
+                                                 mean_snvs=round(median(svsf$nsnv))))
 print(sv_sc_by_type)
 ```
 

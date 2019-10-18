@@ -522,7 +522,7 @@ ROC curves showing sensitivity and specificity of classifying variants as subclo
 - green: SV mean
 - purple: SV min
 
-```{r Figure2d, fig.height=5, fig.width=5}
+```{r Figure2d, fig.height=5, fig.width=7}
 source('https://gist.githubusercontent.com/charly06/91578196fc615c5a79c7174318be4349/raw/d96a98c2933f5af141eac91af83c7895062d68a5/ggrocs.R')
 
 x <- sv_data
@@ -590,15 +590,24 @@ hetCN <- rbind(hetCN,
                data.table(mix='001gM', heterogenousCN=gm$gtype1 != gm$gtype2))
 hetCN <- rbind(hetCN,
                data.table(mix=sv_data$mix, heterogenousCN=sv_data$gtype1 != sv_data$gtype2))
-hetCN <- hetCN[, sum(heterogenousCN)/length(heterogenousCN) * 100, by=c('mix')]
+hetCN <- hetCN[, sum(heterogenousCN)/length(heterogenousCN), by=c('mix')]
 hetCN$V1 <- round(hetCN$V1, 2)
 colnames(hetCN)[2] <- 'heterogenous_CN_percent'
 
 print(hetCN)
 ```
 
+
+
 ```{r calc_se_metrics}
+source('R/CN_perturbation_experiments.R')
+
 se_basedir <- '001_svclone_results/001_mixes_single_end/'
+# uncomment below to generate data
+# SVclone/cluster_with_ccube.R will then
+# need to be run on output
+# generate_se_svs(basedir, se_basedir)
+
 svse_data <- NULL
 for(i in seq(0.1, 0.9, 0.1)) {
     mix <- paste(i, 1-i, sep='-')
@@ -652,11 +661,11 @@ for(p1 in seq(0.1, 0.9, 0.1)) {
 }
 ```
 
-## Figure 3
+## Figure 4
 
 Performance comparison of the dual-end SV model versus single-end.
 
-```{r Figure3, fig.height=8, fig.width=12}
+```{r Figure4, fig.height=8, fig.width=12}
 mm <- melt(metrics)
 mm$variable <- as.character(mm$variable)
 mm$mix <- sapply(mm$mix, function(x){tmp <- as.numeric(strsplit(x, '-')[[1]]); paste(tmp[1]*100, tmp[2]*100, sep='-')})
@@ -696,9 +705,11 @@ grid.arrange(g1, g3, g5,
              g2, g4, g6, ncol=3)
 ```
 
+## Supplementary Figure 10
+
 Comparing ROC curves of dual-end and single-end models.
 
-```{r}
+```{r SuppFigure10, fig.height=7, fig.width=6}
 x <- sv_data
 x$ccf_mean <- apply(x[,c('ccube_ccf1', 'ccube_ccf2')], 1, mean)
 x$is_subclonal_truth <- !x$sample%in%'shared'
@@ -715,7 +726,13 @@ tsize = 15
 ggrocs(rocs) + theme(axis.text = element_text(size = tsize),
                      legend.text = element_text(size = tsize),
                      axis.title = element_blank(),
-                     legend.position = 'none') + geom_step(size=1)
+                     legend.title = element_blank(),
+                     legend.position = 'bottom') + geom_step(size=1)
+```
+Respective AUCs
+
+```{r de_vs_se_AUC}
+sapply(rocs, auc)
 ```
 
 
@@ -785,11 +802,11 @@ for(p1 in seq(0.1, 0.9, 0.1)) {
 }
 ```
 
-## Figure 4
+## Figure 5
 
 Performance for SVs that have clonal background copy-numbers vs. all SVs (clonal + subclonal background copy-numbers).
 
-```{r Figure4, fig.height=8, fig.width=12}
+```{r Figure5, fig.height=8, fig.width=12}
 mm <- melt(metrics)
 mm$variable <- as.character(mm$variable)
 mm$mix <- sapply(mm$mix, function(x){tmp <- as.numeric(strsplit(x, '-')[[1]]); paste(tmp[1]*100, tmp[2]*100, sep='-')})
@@ -933,11 +950,11 @@ metrics <- rbind(metrics, calc_metrics_hiclus(x, '5clus', nclus=5, type='pyc', t
 all_metrics <- metrics
 ```
 
-## Figure 5
+## Figure 3
 
 Performance across SVclone (SVs and SNVs), battenberg and PyClone.
 
-```{r Figure5, fig.height=8, fig.width=12}
+```{r Figure3, fig.height=8, fig.width=12}
 mm <- melt(metrics)
 mm$variable <- as.character(mm$variable)
 mm[mm$variable%like%'mean_mult_error',]$variable <- 'mean multiplicity error'
@@ -1126,3 +1143,161 @@ ggplot(precisions, aes(iter, trace, group=mix, colour=mix)) +
           legend.text = element_text(size=tsize),
           legend.title = element_text(size=tsize))
 ```
+
+
+
+```{r run_cn_perturbation_experiments}
+outdir <-  '001_svclone_results/001_CNdiv/001bM_p0.7_001gM_p0.3/'
+
+het_frac <- 0.5
+frac_divergence <- 0.3
+magnitude <- 1
+
+p1 <- 0.7; p2 <- 1 - p1; mix <- paste(p1, p2, sep='-')
+basename <- paste('001bM_p', p1, '_001gM_p', p2, sep='')
+
+# uncomment below to generate data
+# SVclone will then need to be run on output
+#
+# svin <- read.delim(paste0(basedir, basename, '/', basename, '_filtered_svs.tsv'), sep='\t')
+# het_cns <- table(svin$gtype1==svin$gtype2)[1]
+# non_het_cns <- as.numeric(round(het_cns/het_frac) - het_cns)
+# SEED <- 123; set.seed(SEED); svin <- svin[sample(nrow(svin)),] #shuffle
+# svin <- rbind(svin[svin$gtype1==svin$gtype2,][1:non_het_cns,],
+#               svin[svin$gtype1!=svin$gtype2,])
+# 
+# # generate reduced normal set
+# system(paste('mkdir -p', outdir))
+# system(paste('mkdir -p', paste0(outdir, basename)))
+# write.table(svin, file=paste0(outdir, basename, '/', basename, '_filtered_svs.tsv'), quote=F, sep='\t', row.names=F)
+# pp_file <- paste0(basedir, basename, '/purity_ploidy.txt')
+# system(paste('cp', pp_file, paste0(outdir, basename, '/purity_ploidy.txt')))
+# 
+# generate_de_cn_experiment(svin, basedir, basename, outdir, magnitude, two_sided=FALSE)
+# generate_de_cn_experiment(svin, basedir, basename, outdir, magnitude, two_sided=TRUE)
+# generate_de_cn_experiment(svin, basedir, basename, outdir, magnitude * -1, two_sided=FALSE)
+# generate_de_cn_experiment(svin, basedir, basename, outdir, magnitude * -1, two_sided=TRUE)
+# generate_de_cn_experiment(svin, basedir, basename, outdir, frac_divergence, two_sided=FALSE, frac=TRUE)
+# generate_de_cn_experiment(svin, basedir, basename, outdir, frac_divergence, two_sided=TRUE, frac=TRUE)
+# 
+# generate_se_cn_experiment(svin, basedir, basename, outdir, 0) #normals
+# generate_se_cn_experiment(svin, basedir, basename, outdir, frac_divergence, frac=TRUE)
+# generate_se_cn_experiment(svin, basedir, basename, outdir, magnitude * -1)
+# generate_se_cn_experiment(svin, basedir, basename, outdir, magnitude)
+```
+
+```{r load_cn_perturbation_experiments}
+svd_data <- NULL
+metrics <- NULL
+
+svs <- get_svde_data(basedir, outdir, basename)
+svs$experiment <- 'dual-end'; svd_data <- rbind(svs, svd_data)
+metrics <- calc_metrics_3clus(svs, mix, 'dual-end', type='sv')
+metrics$side <- 'unmodified'
+metrics$model <- 'dual'
+metrics$type <- 'unmodified'
+
+for(side in c('oneside', 'twoside')) {
+    for(type in c('minusCN', 'plusCN', 'frac')) {
+        outdir <- paste0('001_svclone_results/001_CNdiv/', paste(basename, side, type, sep='_'))
+        svs <- get_svde_data(basedir, outdir, basename)
+        
+        type_label <- ifelse(type=='minusCN', 'CN - 1', 'CN + 1')
+        type_label <- ifelse(type=='frac', 'frac ± 0.3', type_label)
+        side_label <- ifelse(side=='oneside', '(one side)', '(both sides)')
+        label <- paste(type_label, side_label)
+        svs$experiment <- label
+        
+        metric <- calc_metrics_3clus(svs, mix, label, type='sv')
+        metric$side <- side; metric$model <- 'dual'; metric$type <- type_label
+        metrics <- rbind(metrics, metric)
+        
+        svd_data <- rbind(svs, svd_data)
+    }
+}
+
+svs_data <- NULL
+for(side in c('side1', 'side2')) {
+    for(type in c('minusCN', 'plusCN', 'frac', '')) {
+        dirname <- ifelse(type!='', paste(basename, side, type, sep='_'), paste(basename, side, sep='_'))
+        outdir <- paste0('001_svclone_results/001_CNdiv/', dirname)
+        svs <- get_svse_data(basedir, outdir, basename)
+        
+        type_label <- ifelse(type=='minusCN', 'CN - 1', 'CN + 1')
+        type_label <- ifelse(type=='frac', 'frac ± 0.3', type_label)
+        type_label <- ifelse(type=='', '', type_label)
+        label <- ifelse(type=='', paste('single-end', side), paste(type_label, side))
+        svs$experiment <- label
+        
+        metric <- calc_metrics_3clus(svs, mix, label, type='snv')
+        metric$side <- side; metric$model <- 'single'; metric$type <- ifelse(type=='', 'unmodified', type_label)
+        metrics <- rbind(metrics, metric)
+        
+        svs_data <- rbind(svs, svs_data)
+    }
+}
+```
+
+
+## Supplementary Figure 11
+
+Comparison of clustering metrics in the unmodified dual-end model under various background copy-number perturbations (+1 and -1 from major allele copy-number, and +0.3 or -0.3 from the copy-number fraction (for subclonal copy-numbers). 
+
+```{r SuppFigure11, fig.height=7, fig.width=11}
+mm <- melt(metrics)
+mm$variable <- as.character(mm$variable)
+mm[mm$variable%like%'mean_mult_error',]$variable <- 'mean multiplicity error'
+mm[mm$variable%like%'mean_ccf',]$variable <- 'mean variant CCF error'
+mm[mm$variable%like%'sens',]$variable <- 'is subclonal sensitivity'
+mm[mm$variable%like%'spec',]$variable <- 'is subclonal specificity'
+mm[mm$variable%like%'spec',]$variable <- 'is subclonal specificity'
+mm[mm$variable%like%'clus_ccf',]$variable <- 'mean cluster CCF error'
+mm[mm$variable%like%'clus_num',]$variable <- 'cluster number error'
+mm$variable <- factor(mm$variable, levels=c('cluster number error', 'mean variant CCF error',
+                                            'is subclonal specificity', 'mean cluster CCF error',
+                                            'mean multiplicity error', 'is subclonal sensitivity'))
+
+mm$experiment <- 'CN CCF deviation'
+mm[mm$type%like%'CN', 'experiment'] <- 'CN deviation'
+mm[mm$type%in%'unmodified', 'experiment'] <- 'unmodified'
+
+mm$side <- 'unmodified'
+mm$side[mm$method%like%'one'] <- 'one side'
+mm$side[mm$method%like%'two'] <- 'both sides'
+mm$side[mm$method%like%'side1'] <- 'side 1'
+mm$side[mm$method%like%'side2'] <- 'side 2'
+
+dual <- mm[mm$model%like%'dual',]
+dual$method <- factor(dual$method, levels=c('frac ± 0.3 (both sides)', 'frac ± 0.3 (one side)',
+                                            'CN - 1 (both sides)', 'CN - 1 (one side)',
+                                            'CN + 1 (both sides)', 'CN + 1 (one side)', 'dual-end'))
+
+ggplot(dual, aes(method, value, group=method, fill=experiment)) +
+    geom_bar(stat='identity') + theme_bw() + 
+    geom_hline(yintercept=0, colour='grey')+ xlab('') + ylab('') +
+    theme(legend.position='bottom', axis.text.x = element_text(size=8), legend.title = element_blank()) +
+    scale_fill_brewer(palette = 'Set1') + facet_wrap(~variable, scales='free_x') +
+    coord_flip() + geom_hline(data=dual[dual$method=='dual-end',], aes(yintercept=value), colour='grey')
+```
+
+## Supplementary Figure 12
+
+Comparison of clustering metrics for the dual and single-end models under copy-number perturbation.
+
+```{r SuppFigure12, fig.height=7, fig.width=11}
+single <- mm[mm$model%like%'single',]
+single <- rbind(single, mm[mm$method=='dual-end',])
+single$experiment <- as.character(sapply(as.character(single$method), function(x){strsplit(x, " side")[[1]][1]}))
+
+x <- mm[(mm$model=='dual' & mm$side=='one side') | mm$model=='single' | mm$type=='unmodified',]
+x <- data.table(x)[,mean(value),by=c('type', 'variable', 'model')]
+x$type <- factor(x$type, levels=c('frac ± 0.3', 'CN + 1', 'CN - 1', 'unmodified'))
+
+ggplot(x, aes(type, V1,  fill=model)) +
+    geom_bar(stat='identity', position='dodge') + theme_bw() + 
+    geom_hline(yintercept=0, colour='grey')+ xlab('') + ylab('') +
+    theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
+    scale_fill_brewer(palette = 'Set1') + facet_wrap(~variable, scales='free_x') +
+    coord_flip() + geom_hline(data=x[x$type%like%'unmodified',], aes(yintercept=V1), colour='grey')
+```
+
