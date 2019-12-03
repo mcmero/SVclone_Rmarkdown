@@ -383,8 +383,8 @@ Optimal versus ground truth CCF distributions. From left to right, by column: i)
 
 This figure is an extended version of the figure that appears in the paper.
 
-```{r Figure2b, fig.height=20, fig.width=12}
-cols <- brewer.pal(10, 'Paired')
+```{r Figure2b, fig.height=20, fig.width=10}
+cols <- brewer.pal(10, 'RdBu')
 names(cols) <- seq(0.1, 1, 0.1)
 
 ccf_met <- NULL
@@ -496,7 +496,7 @@ print(data.table(ccf_met)[,mean(ccf_err),by=c('data')])
 
 True minus optimal CCF averages for SNVs (red) and SVs (blue).
 
-```{r Figure2c, fig.height=5, fig.width=5}
+```{r Figure2c, fig.height=5, fig.width=6}
 cm <- melt(ccf_met)
 mixes <- sapply(cm$mix[grep('-',cm$mix)],
                 function(x){mix <- strsplit(x, '-')[[1]];
@@ -510,7 +510,8 @@ ggplot(cm, aes(mix, value, group=data, colour=data)) +
         geom_hline(yintercept=0, colour='grey') + ylab('optimal - estimated CCF') + xlab('') +
         theme(legend.position='bottom', axis.text.x = element_text(size=10),
               axis.text.y = element_text(size=14), legend.title = element_blank(),
-              legend.text = element_text(size=14))
+              legend.text = element_text(size=14)) +
+        scale_colour_brewer(palette = 'Dark2')
 ```
 
 ## Figure 2d
@@ -543,7 +544,8 @@ rocs[['SNV_ccf']] <- roc(y$is_subclonal_truth, y$best_ccf)
 tsize = 15
 ggrocs(rocs) + theme(axis.text = element_text(size = tsize),
                      legend.text = element_text(size = tsize),
-                     axis.title = element_blank()) + geom_step(size=1)
+                     axis.title = element_blank()) + geom_step(size=1) +
+               scale_colour_brewer(palette = 'RdBu')
 ```
 
 Respective AUCs
@@ -676,30 +678,37 @@ mm[mm$variable%like%'spec',]$variable <- 'is subclonal specificity'
 mm[mm$variable%like%'clus_ccf',]$variable <- 'mean cluster CCF error'
 mm[mm$variable%like%'clus_num',]$variable <- 'cluster number error'
 
+colpal <- 'Dark2'
 g1 <- ggplot(mm[mm$variable%like%'cluster num',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-3, 3) +
         geom_hline(yintercept=0, colour='grey') + ylab('true - estimated cluster number') + xlab('') +
-        theme(legend.position='bottom', axis.text.x = element_text(size=8))
+        theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
+        scale_colour_brewer(palette = colpal)
 g2 <- ggplot(mm[mm$variable%like%'cluster CCF',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.6, 0.6) +
         geom_hline(yintercept=0, colour='grey') + ylab('true - estimated cluster CCF') + xlab('') +
-        theme(legend.position='bottom', axis.text.x = element_text(size=8))
+        theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
+        scale_colour_brewer(palette = colpal)
 g3 <- ggplot(mm[mm$variable%like%'mean var',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.6, 0.6) +
         geom_hline(yintercept=0, colour='grey') + ylab('true - estimated CCF') + xlab('') +
-        theme(legend.position='bottom', axis.text.x = element_text(size=8))
+        theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
+        scale_colour_brewer(palette = colpal)
 g4 <- ggplot(mm[mm$variable%like%'mult',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.6, 0.6) +
         geom_hline(yintercept=0, colour='grey') + ylab('optimal - estimated multiplicity') + xlab('') +
-        theme(legend.position='bottom', axis.text.x = element_text(size=8))
+        theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
+        scale_colour_brewer(palette = colpal)
 g5 <- ggplot(mm[mm$variable%like%'sens',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(0,1) +
         ylab('sensitivity') + xlab('') +
-        theme(legend.position='bottom', axis.text.x = element_text(size=8))
+        theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
+        scale_colour_brewer(palette = colpal)
 g6 <- ggplot(mm[mm$variable%like%'spec',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(0,1) +
         ylab('specificity') + xlab('') +
-        theme(legend.position='bottom', axis.text.x = element_text(size=7))
+        theme(legend.position='bottom', axis.text.x = element_text(size=7)) +
+        scale_colour_brewer(palette = colpal)
 
 grid.arrange(g1, g3, g5,
              g2, g4, g6, ncol=3)
@@ -727,7 +736,8 @@ ggrocs(rocs) + theme(axis.text = element_text(size = tsize),
                      legend.text = element_text(size = tsize),
                      axis.title = element_blank(),
                      legend.title = element_blank(),
-                     legend.position = 'bottom') + geom_step(size=1)
+                     legend.position = 'bottom') + geom_step(size=1) +
+                scale_colour_brewer(palette = colpal)
 ```
 Respective AUCs
 
@@ -820,27 +830,33 @@ mm[mm$variable%like%'clus_num',]$variable <- 'cluster number error'
 g1 <- ggplot(mm[mm$variable%like%'cluster num',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-3, 3) +
         geom_hline(yintercept=0, colour='grey') + ylab('true - estimated cluster number') + xlab('') +
-        theme(legend.position='bottom', axis.text.x = element_text(size=8))
+        theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
+        scale_colour_brewer(palette = colpal)
 g2 <- ggplot(mm[mm$variable%like%'cluster CCF',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) +
         geom_hline(yintercept=0, colour='grey') + ylab('true - estimated cluster CCF') + xlab('') +
-        theme(legend.position='bottom', axis.text.x = element_text(size=8))
+        theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
+        scale_colour_brewer(palette = colpal)
 g3 <- ggplot(mm[mm$variable%like%'mean var',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) +
         geom_hline(yintercept=0, colour='grey') + ylab('true - estimated CCF') + xlab('') +
-        theme(legend.position='bottom', axis.text.x = element_text(size=8))
+        theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
+        scale_colour_brewer(palette = colpal)
 g4 <- ggplot(mm[mm$variable%like%'mult',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(-0.5, 0.5) +
         geom_hline(yintercept=0, colour='grey') + ylab('optimal - estimated multiplicity') + xlab('') +
-        theme(legend.position='bottom', axis.text.x = element_text(size=8))
+        theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
+        scale_colour_brewer(palette = colpal)
 g5 <- ggplot(mm[mm$variable%like%'sens',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(0,1) +
         ylab('sensitivity') + xlab('') +
-        theme(legend.position='bottom', axis.text.x = element_text(size=8))
+        theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
+        scale_colour_brewer(palette = colpal)
 g6 <- ggplot(mm[mm$variable%like%'spec',], aes(mix, value, group=method, colour=method)) +
         geom_line() + geom_point() + facet_grid(~variable) + theme_bw() + ylim(0,1) +
         ylab('specificity') + xlab('') +
-        theme(legend.position='bottom', axis.text.x = element_text(size=7))
+        theme(legend.position='bottom', axis.text.x = element_text(size=7)) +
+        scale_colour_brewer(palette = colpal)
 
 grid.arrange(g1, g3, g5,
              g2, g4, g6, ncol=3)
@@ -974,7 +990,7 @@ mm$mix <- factor(mm$mix, levels=c('10-90', '20-80', '30-70', '40-60', '50-50',
 # remove pyclone as technically it doesn't estimate mult
 mm <- mm[!(mm$method%in%'pyclone' & mm$variable%in%'mean multiplicity error'),]
 
-cols <- brewer.pal(4, 'Set1')
+cols <- brewer.pal(4, 'RdBu')
 names(cols) <- unique(mm$method)
 
 g1 <- ggplot(mm[mm$variable%like%'cluster num',], aes(mix, value, group=method, colour=method)) +
@@ -1153,7 +1169,7 @@ het_frac <- 0.5
 frac_divergence <- 0.3
 magnitude <- 1
 
-p1 <- 0.7; p2 <- 1 - p1; mix <- paste(p1, p2, sep='-')
+p1 <- i <- 0.7; p2 <- 1 - p1; mix <- paste(p1, p2, sep='-')
 basename <- paste('001bM_p', p1, '_001gM_p', p2, sep='')
 
 # uncomment below to generate data
@@ -1272,11 +1288,14 @@ dual$method <- factor(dual$method, levels=c('frac ± 0.3 (both sides)', 'frac ±
                                             'CN - 1 (both sides)', 'CN - 1 (one side)',
                                             'CN + 1 (both sides)', 'CN + 1 (one side)', 'dual-end'))
 
+cols <- brewer.pal(3, 'Dark2')
+names(cols) <- c('unmodified', 'CN CCF deviation', 'CN deviation')
+
 ggplot(dual, aes(method, value, group=method, fill=experiment)) +
     geom_bar(stat='identity') + theme_bw() + 
     geom_hline(yintercept=0, colour='grey')+ xlab('') + ylab('') +
     theme(legend.position='bottom', axis.text.x = element_text(size=8), legend.title = element_blank()) +
-    scale_fill_brewer(palette = 'Set1') + facet_wrap(~variable, scales='free_x') +
+    scale_fill_manual(values = cols) + facet_wrap(~variable, scales='free_x') +
     coord_flip() + geom_hline(data=dual[dual$method=='dual-end',], aes(yintercept=value), colour='grey')
 ```
 
@@ -1297,7 +1316,7 @@ ggplot(x, aes(type, V1,  fill=model)) +
     geom_bar(stat='identity', position='dodge') + theme_bw() + 
     geom_hline(yintercept=0, colour='grey')+ xlab('') + ylab('') +
     theme(legend.position='bottom', axis.text.x = element_text(size=8)) +
-    scale_fill_brewer(palette = 'Set1') + facet_wrap(~variable, scales='free_x') +
+    scale_fill_brewer(palette = 'Dark2') + facet_wrap(~variable, scales='free_x') +
     coord_flip() + geom_hline(data=x[x$type%like%'unmodified',], aes(yintercept=V1), colour='grey')
 ```
 

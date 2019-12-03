@@ -35,6 +35,8 @@ library(circlize)
 library(survival)
 library(data.table)
 library(ggfortify)
+library(dplyr)
+library(GenomicRanges)
 ```
 
 
@@ -226,7 +228,7 @@ for (sample in pcawg_summary$sample) {
 
 PCAWG SV versus SNV subclonal fractions. Lines repesent density.
 
-```{r Figure5a, fig.height=8, fig.height=7}
+```{r Figure6a, fig.height=8, fig.height=7}
 sv_sum_forplot <- distinct(left_join(sv_summary, pcawg_summary, by='sample'))
 
 tmp <- pcawg.colour.palette(scheme='organ.system', return.scheme=T)
@@ -426,7 +428,7 @@ print(km.by.group)
 
 Survival curve comparing SCNR, high-SV heterogeneity and all other PCAWG samples.
 
-```{r Figure5b, fig.height=4, fig.width=6}
+```{r Figure6b, fig.height=4, fig.width=6}
 xclin$classification <- factor(xclin$classification, levels=c('Other', 'High SV heterogeneity', 'SCNR'))
 fit <- survfit(Surv(donor_survival_time, donor_vital_status == 'deceased') ~ classification, data = xclin)
 
@@ -516,7 +518,7 @@ Plots for representative SCNR PCWAG sample bef21282.
 
 Circos plot.
 
-```{r Figure5c}
+```{r Figure6c}
 sample <- 'bef21282-c622-11e3-bf01-24c6515278c0' # select representative sample
 pur <- pcawg_pp[pcawg_pp$samplename==sample,]$purity
 
@@ -540,7 +542,7 @@ draw_circos_clonal(svcc, sample, pur, bbf)
 
 SNV CCF histogram.
 
-```{r Figure5d, fig.height=5, fig.width=7}
+```{r Figure6d, fig.height=5, fig.width=7}
 sc <- read.delim(sv_sc, sep='\t')
 sc$CCF <- sc$proportion / pur
 
@@ -561,7 +563,7 @@ plot_hist_func(snvs, snsc, pur, varclass=TRUE, vaf=FALSE, clus = -1, title='SNVs
 
 Subclonal SVs CCF histogram.
 
-```{r Figure5e, fig.height=5, fig.width=7}
+```{r Figure6e, fig.height=5, fig.width=7}
 plot_hist_func(svcc[svcc$CCF<subclonal_cutoff,], sc[sc$CCF < subclonal_cutoff,], 
                  pur, varclass=TRUE, vaf=FALSE, clus = -1,
                  title='subclonal SVs') + ylim(0,20)
@@ -569,7 +571,7 @@ plot_hist_func(svcc[svcc$CCF<subclonal_cutoff,], sc[sc$CCF < subclonal_cutoff,],
 
 Clonal SVs CCF histogram.
 
-```{r Figure5f, fig.height=5, fig.width=7}
+```{r Figure6f, fig.height=5, fig.width=7}
 plot_hist_func(svcc[svcc$CCF>=subclonal_cutoff,], sc[sc$CCF >= subclonal_cutoff,], 
                  pur, varclass=TRUE, vaf=FALSE, clus = -1,
                  title='clonal SVs') + ylim(0,20)

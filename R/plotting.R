@@ -31,8 +31,8 @@ draw_circos_clonal <- function(dat, sample, pur, bbf) {
 plot_hist_func <- function(dat, sc, pur, varclass=FALSE, vaf=FALSE, clus=-1, title='', ylim=0) {
     var_types <- c('DEL', 'DUP', 'INTDUP', 'INTRX', 'INV', 'SNV')
     dat$classification <- factor(dat$classification, levels=var_types)
-    set1 <- brewer.pal(7, 'Set1')[-6][6:1] #remove yellow
-    type_cols <- set1; names(type_cols) <- var_types
+    colpal <- brewer.pal(6, 'RdBu')
+    names(colpal) <- var_types
     
     if (clus>=0) {
         dat <- dat[dat$most_likely_assignment==clus,]
@@ -74,11 +74,11 @@ plot_hist_func <- function(dat, sc, pur, varclass=FALSE, vaf=FALSE, clus=-1, tit
               legend.text = element_text(size = 18),
               legend.position = 'bottom')
     if (varclass) {
-        var_hist <- var_hist + scale_fill_manual(values = type_cols) + 
-            scale_colour_manual(values = type_cols)
+        var_hist <- var_hist + scale_fill_manual(values = colpal) + 
+            scale_colour_manual(values = colpal)
     } else {
-        var_hist <- var_hist + scale_fill_brewer(palette = 'Set1', name = plotvar) + 
-            scale_color_brewer(palette = 'Set1', name = plotvar)
+        var_hist <- var_hist + scale_fill_manual(values = colpal, name = plotvar) + 
+            scale_color_manual(values = colpal, name = plotvar)
     }
     
     if (!vaf) {
