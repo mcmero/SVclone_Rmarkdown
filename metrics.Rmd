@@ -543,8 +543,8 @@ rocs[['SNV_ccf']] <- roc(y$is_subclonal_truth, y$best_ccf)
 
 tsize = 15
 ggrocs(rocs) + theme(axis.text = element_text(size = tsize),
-                     legend.text = element_text(size = tsize),
-                     axis.title = element_blank()) + geom_step(size=1) +
+                     legend.text = element_text(size = tsize)) +
+               geom_step(size=1) +
                scale_colour_brewer(palette = 'RdBu')
 ```
 
@@ -734,7 +734,6 @@ rocs[['SVs_single_end']] <- roc(y$is_subclonal_truth, y$ccube_ccf)
 tsize = 15
 ggrocs(rocs) + theme(axis.text = element_text(size = tsize),
                      legend.text = element_text(size = tsize),
-                     axis.title = element_blank(),
                      legend.title = element_blank(),
                      legend.position = 'bottom') + geom_step(size=1) +
                 scale_colour_brewer(palette = colpal)
